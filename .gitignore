@@ -1,0 +1,6 @@
+Packages/
+TestHmiProject/
+TwinCAT Project/
+.vs/
+.engineering_servers/
+*.~u

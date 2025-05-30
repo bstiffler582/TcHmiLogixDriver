@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "definitions": {
+    "target": {
+      "type": "object",
+      "properties": {
+        "targetAddress": {
+          "type": "string",
+          "description": "IP or hostname of Logix device",
+          "default": "192.168.0.100"
+        },
+        "targetSlot": {
+          "type": "string",
+          "description": "Slot or path to CLX CPU",
+          "default": "1,0"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Connection timeout (ms)",
+          "default": 1000
+        }
+      },
+      "required": [ "targetAddress", "targetSlot", "timeout" ]
+    }
+  },
+  "properties": {
+    "targets": {
+      "configDescription": "Logix targets",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/target"
+      }
+    }
+  },
+  "additionalProperties": false
+}

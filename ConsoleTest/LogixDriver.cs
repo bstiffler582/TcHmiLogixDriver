@@ -32,7 +32,7 @@ namespace ConsoleTest
                 PlcType = PlcType.ControlLogix,
                 Protocol = Protocol.ab_eip,
                 Name = "@tags",
-                Timeout = TimeSpan.FromMilliseconds(1000),
+                Timeout = TimeSpan.FromMilliseconds(5000),
             })
             {
                 tagList.Read();
@@ -78,20 +78,21 @@ namespace ConsoleTest
 
                 foreach (var udtId in uniqueUdtTypeIds)
                 {
-                    var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
+                    using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
                     {
                         Gateway = gateway,
                         Path = path,
                         PlcType = PlcType.ControlLogix,
                         Protocol = Protocol.ab_eip,
                         Name = $"@udt/{udtId}",
-                    };
+                    })
+                    {
+                        udtTag.Read();
 
-                    udtTag.Read();
-
-                    Console.WriteLine($"Id={udtTag.Value.Id} Name={udtTag.Value.Name} NumFields={udtTag.Value.NumFields} Size={udtTag.Value.Size}");
-                    foreach (var f in udtTag.Value.Fields)
-                        Console.WriteLine($"    Name={f.Name} Offset={f.Offset} Metadata={f.Metadata} Type={LogixTypes.ResolveTypeName(f.Type)}");
+                        Console.WriteLine($"Id={udtTag.Value.Id} Name={udtTag.Value.Name} NumFields={udtTag.Value.NumFields} Size={udtTag.Value.Size}");
+                        foreach (var f in udtTag.Value.Fields)
+                            Console.WriteLine($"    Name={f.Name} Offset={f.Offset} Metadata={f.Metadata} Type={LogixTypes.ResolveTypeName(f.Type)}");
+                    }
                 }
             }
         }

@@ -3,21 +3,24 @@ using System;
 
 namespace ConsoleTest
 {
+    public record TagDef(string Name, TypeDef Type);
+    public record TypeDef(string Name, ushort Code, List<TagDef> Members, uint Dims = 0);
+
     static class LogixTypes
     {
-        private static readonly Dictionary<ushort, string> TypeCodeMap = new()
+        public enum Code : ushort
         {
-            { 0xC1, "BOOL" }, { 0xC2, "SINT" }, { 0xC3, "INT" }, { 0xC4, "DINT" },
-            { 0xC5, "LINT" }, { 0xC6, "USINT" }, { 0xC7, "UINT" }, { 0xC8, "UDINT" },
-            { 0xC9, "ULINT" }, { 0xCA, "REAL" }, { 0xCB, "LREAL" },
-            { 0xCC, "STIME" }, { 0xCD, "DATE" }, { 0xCE, "TIME_OF_DAY" }, { 0xCF, "DATE_AND_TIME" },
-            { 0xD0, "STRING" }, { 0xD1, "BYTE" }, { 0xD2, "WORD" }, { 0xD3, "DWORD" }, { 0xD4, "LWORD" },
-            { 0xD5, "STRING2" }, { 0xD6, "FTIME" }, { 0xD7, "LTIME" }, { 0xD8, "ITIME" },
-            { 0xD9, "STRINGN" }, { 0xDA, "SHORT_STRING" }, { 0xDB, "TIME" }, { 0xDC, "EPATH" },
-            { 0xDD, "ENGUNIT" }, { 0xDE, "STRINGI" },
-            { 0xA0, "ABBREV_STRUCT" }, { 0xA1, "ABBREV_ARRAY" },
-            { 0xA2, "FULL_STRUCT" }, { 0xA3, "FULL_ARRAY" }
-        };
+            BOOL = 0xC1, SINT = 0xC2, INT = 0xC3, DINT = 0xC4, 
+            LINT = 0xC5, USINT = 0xC6, UINT = 0xC7, UDINT = 0xC8, ULINT = 0xC9, 
+            REAL = 0xCA, LREAL = 0xCB,
+            STIME = 0xCC, DATE = 0xCD, TIME_OF_DAY = 0xCE, DATE_AND_TIME = 0xCF,
+            STRING = 0xD0, BYTE = 0xD1, WORD = 0xD2, DWORD = 0xD3, LWORD = 0xD4,
+            STRING2 = 0xD5, FTIME = 0xD6, LTIME = 0xD7, ITIME = 0xD8,
+            STRINGN = 0xD9, SHORT_STRING = 0xDA, TIME = 0xDB, EPATH = 0xDC,
+            ENGUNIT = 0xDD, STRINGI = 0xDE,
+            ABBREV_STRUCT = 0xA0, ABBREV_ARRAY = 0xA1,
+            FULL_STRUCT = 0xA2, FULL_ARRAY = 0xA3
+        }
 
         public static bool IsUdt(ushort typeCode)
         {
@@ -27,22 +30,21 @@ namespace ConsoleTest
             return ((typeCode & TYPE_IS_STRUCT) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
         }
 
-        private static bool IsArray(ushort typeCode)
+        public static bool IsArray(ushort typeCode)
         {
-            const ushort TYPE_IS_ARR = 0x2000;
+            const ushort TYPE_IS_ARRAY = 0x2000;
             const ushort TYPE_IS_SYSTEM = 0x1000;
 
-            return ((typeCode & TYPE_IS_ARR) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
+            return ((typeCode & TYPE_IS_ARRAY) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
         }
 
         public static string ResolveTypeName(ushort typeCode)
         {
-            if (TypeCodeMap.TryGetValue(typeCode, out var baseName))
+            if (Enum.IsDefined(typeof(Code), typeCode))
             {
-                return baseName;
+                return ((Code)typeCode).ToString();
             }
 
-            bool udt = IsUdt(typeCode);
             if (IsArray(typeCode))
             {
                 return $"ARRAY OF (0x{(typeCode & 0x0FFF):X4})";
@@ -58,6 +60,12 @@ namespace ConsoleTest
             {
                 return $"UnknownType(0x{typeCode:X4})";
             }
+        }
+
+        public static ushort GetUdtId(ushort typeCode)
+        {
+            const ushort TYPE_UDT_ID_MASK = 0x0FFF;
+            return (ushort)(typeCode & TYPE_UDT_ID_MASK);
         }
     }
 }

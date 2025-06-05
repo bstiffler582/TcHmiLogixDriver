@@ -6,7 +6,7 @@ namespace ConsoleTest
 {
     public class LogixDriver
     {
-        private static LogixDriver instance;
+        private static LogixDriver? instance;
         public static LogixDriver Instance
         {
             get
@@ -24,21 +24,22 @@ namespace ConsoleTest
             if (LogixTypes.IsArray(type.Code))
             {
                 var baseTypeCode = (ushort)(type.Code & ~0x2000);
-                var baseType = resolveType(new TypeDef("", baseTypeCode, new List<TagDef>()), target);
+                var baseType = resolveType(new TypeDef("", baseTypeCode), target);
                 var members = Enumerable.Range(0, (int)type.Dims)
                     .Select(m => new TagDef($"{m}", baseType))
                     .ToList();
 
-                return new TypeDef($"ARRAY OF {baseType.Name}", baseType.Code, members);
+                return new TypeDef($"ARRAY OF {baseType.Name}", baseType.Code, type.Dims, members);
             }
             else if (LogixTypes.IsUdt(type.Code))
             {
                 var udtId = LogixTypes.GetUdtId(type.Code);
 
-                // type def already resolved
+                // get from cache if definition is already resolved
                 if (target.TryGetUdtDef(udtId, out TypeDef? typeDef) && typeDef != null)
                     return typeDef;
 
+                // read udt def
                 using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
                 {
                     Gateway = target.Gateway,
@@ -50,29 +51,29 @@ namespace ConsoleTest
                 {
                     udtTag.Read();
 
+                    // resolve udt members
                     var members = new List<TagDef>();
                     foreach (var m in udtTag.Value.Fields)
                     {
-                        var mType = resolveType(new TypeDef("", m.Type, new List<TagDef>(), m.Metadata), target);
+                        var mType = resolveType(new TypeDef("", m.Type, m.Metadata), target);
                         members.Add(new TagDef(m.Name, mType));
                     }
 
-                    var ret = new TypeDef(udtTag.Value.Name, type.Code, members);
+                    var ret = new TypeDef(udtTag.Value.Name, type.Code, type.Dims, members);
                     target.AddUdtDef(udtId, ret);
                     return ret;
                 }
             }
             else
             {
-                return new TypeDef(LogixTypes.ResolveTypeName(type.Code), type.Code, new List<TagDef>());
+                // primitive or unknown type
+                return new TypeDef(LogixTypes.ResolveTypeName(type.Code), type.Code);
             }
         }
 
         public void GetTags(string address, string path)
         {
             var target = new LogixTarget("Test", address, path, PlcType.ControlLogix, Protocol.ab_eip);
-            
-            var gateway = address;
 
             using (var tagList = new Tag<TagInfoPlcMapper, TagInfo[]>
             {
@@ -88,23 +89,48 @@ namespace ConsoleTest
 
                 foreach (var tag in tagList.Value)
                 {
-                    // TODO: Program Tags
-                    var type = resolveType(new TypeDef(LogixTypes.ResolveTypeName(tag.Type), tag.Type, new List<TagDef>(), tag.Dimensions[0]), target);
+                    var type = resolveType(new TypeDef(LogixTypes.ResolveTypeName(tag.Type), tag.Type, tag.Dimensions[0]), target);
                     var tagDef = new TagDef(tag.Name, type);
+
+                    if (tagDef.Type.Name.Contains("Unknown"))
+                    {
+                        if (tagDef.Name.StartsWith("Program:"))
+                        {
+                            // TODO
+                        }
+                        else continue;
+                    }
+
+                    target.AddTag(tagDef);
                     Console.WriteLine($"Name={tagDef.Name} Type={tagDef.Type.Name}");
-                    Print(tagDef.Name, tagDef.Type.Members, 1);
+                    Print(tagDef, tagDef.Name, 1);
                 }
+
+                target.Debug();
             }
         }
 
-        private void Print(string parent, List<TagDef> members, int level)
+        private void GetProgramTags(string programName)
         {
+
+        }
+
+        private void Print(TagDef parent, string path, int level)
+        {
+            if (parent.Type.Members is null) return;
+
             var space = new String(' ', (level * 2));
-            foreach(var m in members)
+            foreach(var m in parent.Type.Members)
             {
-                Console.WriteLine($"{space}Name={parent}.{m.Name} Type={m.Type.Name}");
-                if (m.Type.Members.Count > 0)
-                    Print($"{parent}.{m.Name}", m.Type.Members, level + 1);
+                string name;
+                if (parent.Type.Name.Contains("ARRAY"))
+                    name = $"{path}[{m.Name}]";
+                else
+                    name = $"{path}.{m.Name}";
+
+                Console.WriteLine($"{space}Name={name} Type={m.Type.Name}");
+                if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
+                    Print(m, name, level + 1);
             }
         }
 

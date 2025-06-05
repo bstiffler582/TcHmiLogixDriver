@@ -4,7 +4,7 @@ using System;
 namespace ConsoleTest
 {
     public record TagDef(string Name, TypeDef Type);
-    public record TypeDef(string Name, ushort Code, List<TagDef> Members, uint Dims = 0);
+    public record TypeDef(string Name, ushort Code, uint Dims = 0, List<TagDef>? Members = null);
 
     static class LogixTypes
     {

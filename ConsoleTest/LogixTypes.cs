@@ -1,10 +1,9 @@
-﻿using libplctag.DataTypes;
-using System;
+﻿using System;
 
 namespace ConsoleTest
 {
-    public record TagDef(string Name, TypeDef Type);
-    public record TypeDef(string Name, ushort Code, uint Dims = 0, List<TagDef>? Members = null);
+    public record TagDefinition(string Name, TypeDefinition Type);
+    public record TypeDefinition(string Name, ushort Code, uint Dims = 0, List<TagDefinition>? Members = null);
 
     static class LogixTypes
     {
@@ -22,50 +21,33 @@ namespace ConsoleTest
             FULL_STRUCT = 0xA2, FULL_ARRAY = 0xA3
         }
 
-        public static bool IsUdt(ushort typeCode)
-        {
-            const ushort TYPE_IS_STRUCT = 0x8000;
-            const ushort TYPE_IS_SYSTEM = 0x1000;
+        const ushort TYPE_IS_ARRAY = 0x2000;
+        const ushort TYPE_IS_STRUCT = 0x8000;
+        const ushort TYPE_IS_SYSTEM = 0x1000;
+        const ushort TYPE_UDT_ID_MASK = 0x0FFF;
 
-            return ((typeCode & TYPE_IS_STRUCT) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
-        }
+        public static bool IsUdt(ushort typeCode) =>
+            ((typeCode & TYPE_IS_STRUCT) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
 
-        public static bool IsArray(ushort typeCode)
-        {
-            const ushort TYPE_IS_ARRAY = 0x2000;
-            const ushort TYPE_IS_SYSTEM = 0x1000;
+        public static bool IsArray(ushort typeCode) =>
+            ((typeCode & TYPE_IS_ARRAY) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
 
-            return ((typeCode & TYPE_IS_ARRAY) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
-        }
+        public static ushort GetUdtId(ushort typeCode) =>
+            (ushort)(typeCode & TYPE_UDT_ID_MASK);
+
+        public static ushort GetArrayBaseType(ushort typeCode) =>
+            (ushort)(typeCode & ~TYPE_IS_ARRAY);
 
         public static string ResolveTypeName(ushort typeCode)
         {
             if (Enum.IsDefined(typeof(Code), typeCode))
-            {
                 return ((Code)typeCode).ToString();
-            }
-
-            if (IsArray(typeCode))
-            {
-                return $"ARRAY OF (0x{(typeCode & 0x0FFF):X4})";
-            }
-            else if (IsUdt(typeCode))
-            {
-                if ((typeCode & 0x00FF) == 0xCE)
-                    return "STRING";
-                else
-                    return $"UDT (ID:{typeCode & 0x0FFF})";
-            }
-            else
-            {
+            else if (IsUdt(typeCode) && (typeCode & 0x00FF) == 0xCE)
+                return "STRING";
+            else if ((typeCode & 0x1000) != 0)
+                return $"SystemType(0x{typeCode:X4})";
+            else 
                 return $"UnknownType(0x{typeCode:X4})";
-            }
-        }
-
-        public static ushort GetUdtId(ushort typeCode)
-        {
-            const ushort TYPE_UDT_ID_MASK = 0x0FFF;
-            return (ushort)(typeCode & TYPE_UDT_ID_MASK);
         }
     }
 }

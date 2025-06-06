@@ -21,25 +21,6 @@ using TcHmiSrv.Core.Tools.Management;
 
 namespace TcHmiLogixDriver
 {
-    public class LogixSymbol : Symbol
-    {
-        public LogixSymbol(JsonSchemaValue readValue) : 
-            base(readValue)
-        {
-
-        }
-
-        protected override Value Read(Queue<string> elements, Context context)
-        {
-            throw new NotImplementedException();
-        }
-
-        protected override Value Write(Queue<string> elements, Value value, Context context)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
     // Represents the default type of the TwinCAT HMI server extension.
     public class TcHmiLogixDriver : IServerExtension
     {
@@ -48,7 +29,8 @@ namespace TcHmiLogixDriver
         private readonly ShutdownListener shutdownListener = new ShutdownListener();
         
         private LogixDriverConfig configuration = new LogixDriverConfig();
-        private LogixDriver driver = LogixDriver.Instance;
+
+        //private LogixDriver driver = LogixDriver.Instance;
         private DynamicSymbolsProvider symbolProvider;
 
         // Called after the TwinCAT HMI server loaded the server extension.
@@ -84,13 +66,20 @@ namespace TcHmiLogixDriver
                 var dict = new Dictionary<string, Symbol>();
                 JSchema schema = JSchema.Parse(@"{
                   'type': 'object',
+                  'allowMapping': false,
                   'properties': {
-                    'name': {'type':'string'},
-                    'roles': {'type': 'array'}
+                    'name': {'type': 'string'},
+                    'roles': { 'type': 'array'},
+                    'childObj': {
+                        'type': 'object',
+                        'properties': {
+                            'one': {'type': 'number'},
+                            'two': {'type': 'boolean'}
+                        }
+                     }
                   }
                 }");
-                schema.Items.Add(new JSchema());
-                
+
                 dict.Add("SomeTest", new LogixSymbol(new JsonSchemaValue(schema)));
 
                 symbolProvider = new DynamicSymbolsProvider(dict);
@@ -106,7 +95,7 @@ namespace TcHmiLogixDriver
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
-                foreach (var command in symbolProvider.HandleCommands(commands))
+                foreach (var command in symbolProvider.HandleCommands(e.Commands))
                 {
                     try
                     {

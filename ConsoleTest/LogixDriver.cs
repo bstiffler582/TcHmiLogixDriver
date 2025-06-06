@@ -1,6 +1,7 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
 using System;
+using System.IO;
 
 namespace ConsoleTest
 {
@@ -18,28 +19,28 @@ namespace ConsoleTest
         }
 
         // recursively resolve type definitions
-        private TypeDef resolveType(TypeDef type, LogixTarget target)
+        private TypeDefinition ResolveType(TypeDefinition type, LogixTarget target)
         {
             // TODO: only 1D arrays supported
             if (LogixTypes.IsArray(type.Code))
             {
-                var baseTypeCode = (ushort)(type.Code & ~0x2000);
-                var baseType = resolveType(new TypeDef("", baseTypeCode), target);
+                var baseTypeCode = LogixTypes.GetArrayBaseType(type.Code);
+                var baseType = ResolveType(new TypeDefinition("", baseTypeCode), target);
                 var members = Enumerable.Range(0, (int)type.Dims)
-                    .Select(m => new TagDef($"{m}", baseType))
+                    .Select(m => new TagDefinition($"{m}", baseType))
                     .ToList();
 
-                return new TypeDef($"ARRAY OF {baseType.Name}", baseType.Code, type.Dims, members);
+                return new TypeDefinition($"ARRAY OF {baseType.Name}", baseType.Code, type.Dims, members);
             }
             else if (LogixTypes.IsUdt(type.Code))
             {
                 var udtId = LogixTypes.GetUdtId(type.Code);
 
                 // get from cache if definition is already resolved
-                if (target.TryGetUdtDef(udtId, out TypeDef? typeDef) && typeDef != null)
+                if (target.TryGetUdtDef(udtId, out TypeDefinition? typeDef) && typeDef != null)
                     return typeDef;
 
-                // read udt def
+                // read udt definition
                 using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
                 {
                     Gateway = target.Gateway,
@@ -52,14 +53,14 @@ namespace ConsoleTest
                     udtTag.Read();
 
                     // resolve udt members
-                    var members = new List<TagDef>();
+                    var members = new List<TagDefinition>();
                     foreach (var m in udtTag.Value.Fields)
                     {
-                        var mType = resolveType(new TypeDef("", m.Type, m.Metadata), target);
-                        members.Add(new TagDef(m.Name, mType));
+                        var mType = ResolveType(new TypeDefinition("", m.Type, m.Metadata), target);
+                        members.Add(new TagDefinition(m.Name, mType));
                     }
 
-                    var ret = new TypeDef(udtTag.Value.Name, type.Code, type.Dims, members);
+                    var ret = new TypeDefinition(udtTag.Value.Name, type.Code, type.Dims, members);
                     target.AddUdtDef(udtId, ret);
                     return ret;
                 }
@@ -67,7 +68,7 @@ namespace ConsoleTest
             else
             {
                 // primitive or unknown type
-                return new TypeDef(LogixTypes.ResolveTypeName(type.Code), type.Code);
+                return new TypeDefinition(LogixTypes.ResolveTypeName(type.Code), type.Code);
             }
         }
 
@@ -89,16 +90,23 @@ namespace ConsoleTest
 
                 foreach (var tag in tagList.Value)
                 {
-                    var type = resolveType(new TypeDef(LogixTypes.ResolveTypeName(tag.Type), tag.Type, tag.Dimensions[0]), target);
-                    var tagDef = new TagDef(tag.Name, type);
+                    TagDefinition tagDef;
+                    var type = ResolveType(new TypeDefinition("", tag.Type, tag.Dimensions[0]), target);
 
-                    if (tagDef.Type.Name.Contains("Unknown"))
+                    if (type.Name.Contains("SystemType"))
                     {
-                        if (tagDef.Name.StartsWith("Program:"))
+                        if (tag.Name.StartsWith("Program:"))
                         {
-                            // TODO
+                            // load program tags as child members
+                            var progType = new TypeDefinition(type.Name, type.Code, 0, GetProgramTags(tag.Name, target));
+                            var progTag = new TagDefinition(tag.Name, progType);
+                            tagDef = progTag;
                         }
                         else continue;
+                    }
+                    else
+                    {
+                        tagDef = new TagDefinition(tag.Name, type);
                     }
 
                     target.AddTag(tagDef);
@@ -110,12 +118,34 @@ namespace ConsoleTest
             }
         }
 
-        private void GetProgramTags(string programName)
+        private List<TagDefinition> GetProgramTags(string program, LogixTarget target)
         {
+            using (var programTags = new Tag<TagInfoPlcMapper, TagInfo[]>
+            {
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = $"{program}.@tags",
+                Timeout = TimeSpan.FromMilliseconds(5000)
+            })
+            {
+                programTags.Read();
 
+                var members = new List<TagDefinition>();
+                foreach(var programTag in programTags.Value)
+                {
+                    var type = ResolveType(new TypeDefinition("", programTag.Type, programTag.Dimensions[0]), target);
+                    if (type.Name.Contains("SystemType")) continue;
+                    var tagDef = new TagDefinition(programTag.Name, type);
+                    members.Add(tagDef);
+                }
+
+                return members;
+            }
         }
 
-        private void Print(TagDef parent, string path, int level)
+        private void Print(TagDefinition parent, string path, int level)
         {
             if (parent.Type.Members is null) return;
 
@@ -131,20 +161,6 @@ namespace ConsoleTest
                 Console.WriteLine($"{space}Name={name} Type={m.Type.Name}");
                 if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
                     Print(m, name, level + 1);
-            }
-        }
-
-        static bool TagIsProgram(TagInfo tag, out string prefix)
-        {
-            if (tag.Name.StartsWith("Program:"))
-            {
-                prefix = tag.Name;
-                return true;
-            }
-            else
-            {
-                prefix = string.Empty;
-                return false;
             }
         }
     }

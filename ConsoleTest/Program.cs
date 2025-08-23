@@ -1,9 +1,9 @@
 ﻿using ConsoleTest;
 using libplctag;
 
-var target = new LogixTarget("Test", "192.168.68.64", "1,0", PlcType.ControlLogix, Protocol.ab_eip);
+var target = new LogixTarget("Test", "192.168.68.64");
 
-LogixDriver driver = LogixDriver.Instance;
+LogixDriver driver = new LogixDriver();
 
 var tags = driver.LoadTags(target);
 

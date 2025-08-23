@@ -11,18 +11,24 @@ namespace ConsoleTest
         public string Path { get; }
         public PlcType PlcType { get; }
         public Protocol Protocol { get; }
+        public int TimeoutMs { get; set; } = 5000;
 
         // map of tags
         private readonly Dictionary<string, TagDefinition> tags = new();
         public IReadOnlyDictionary<string, TagDefinition> Tags => tags;
 
-        public LogixTarget(string Name, string Gateway, string Path, PlcType PlcType, Protocol Protocol)
+        public LogixTarget(string Name, string Gateway, 
+            string Path = "1,0", 
+            PlcType PlcType = PlcType.ControlLogix, 
+            Protocol Protocol = Protocol.ab_eip, 
+            int TimeoutMs = 5000)
         {
             this.Name = Name;
             this.Gateway = Gateway;
             this.Path = Path;
             this.PlcType = PlcType;
             this.Protocol = Protocol;
+            this.TimeoutMs = TimeoutMs;
         }
 
         bool TryGetTag(string name, out TagDefinition? tag) => tags.TryGetValue(name, out tag);

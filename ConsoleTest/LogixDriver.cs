@@ -5,24 +5,78 @@ using System.IO;
 
 namespace ConsoleTest
 {
-    public class LogixDriver
+    public interface ILogixTagReader
     {
-        private static LogixDriver? instance;
-        public static LogixDriver Instance
+        TagInfo[] ReadTagInfo(LogixTarget target);
+        UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
+        TagInfo[] ReadProgramTags(LogixTarget target, string program);
+    }
+
+    public class LogixTagReader : ILogixTagReader
+    {
+        public TagInfo[] ReadTagInfo(LogixTarget target)
         {
-            get
+            using (var tagList = new Tag<TagInfoPlcMapper, TagInfo[]>
             {
-                if (instance == null)
-                    instance = new LogixDriver();
-                return instance;
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = "@tags",
+                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs),
+            })
+            {
+                return tagList.Read();
             }
         }
 
-        public IEnumerable<TagDefinition> LoadTags(LogixTarget target, int timeoutMs = 5000)
+        public UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId)
+        {
+            using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
+            {
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = $"@udt/{udtId}",
+                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs),
+            })
+            {
+                return udtTag.Read();
+            }
+        }
+        
+        public TagInfo[] ReadProgramTags(LogixTarget target, string program)
+        {
+            using (var programTags = new Tag<TagInfoPlcMapper, TagInfo[]>
+            {
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = $"{program}.@tags",
+                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
+            })
+            {
+                return programTags.Read();
+            }
+        }
+    }
+
+    public class LogixDriver
+    {
+        private readonly ILogixTagReader tagReader;
+
+        public LogixDriver(ILogixTagReader? tagReader = null)
+        {
+            this.tagReader = tagReader ?? new LogixTagReader();
+        }
+
+        public IEnumerable<TagDefinition> LoadTags(LogixTarget target)
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
             
-            UdtInfo udtInfoHandler(ushort udtId) => ReadUdtInfo(target, udtId, timeoutMs);
+            UdtInfo udtInfoHandler(ushort udtId) => tagReader.ReadUdtInfo(target, udtId);
             TypeDefinition arrayResolver(TypeDefinition type) => LogixTypes.ArrayResolver(type, typeResolver);
             TypeDefinition udtResolver(TypeDefinition type) => LogixTypes.UdtResolver(type, typeCache, typeResolver, udtInfoHandler);
             TypeDefinition typeResolver(TypeDefinition type) => LogixTypes.ResolveType(type, arrayResolver, udtResolver);
@@ -33,10 +87,10 @@ namespace ConsoleTest
                 return new TagDefinition(tag.Name, type);
             }
 
-            var tagInfos = ReadTagInfo(target, timeoutMs);
+            var tagInfos = tagReader.ReadTagInfo(target);
 
             var controllerTags = ResolveControllerTags(tagInfos, GetTagDefinition);
-            var programTags = ResolveProgramTags(tagInfos, GetTagDefinition, (string program) => ReadProgramTags(target, program));
+            var programTags = ResolveProgramTags(tagInfos, GetTagDefinition, (string program) => tagReader.ReadProgramTags(target, program));
 
             return programTags.Concat(controllerTags);
         }
@@ -65,54 +119,6 @@ namespace ConsoleTest
                     return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Name, 0, progTags));
                 })
                 .ToList();
-        }
-
-        private UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId, int timeoutMs = 5000)
-        {
-            using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = $"@udt/{udtId}",
-                Timeout = TimeSpan.FromMilliseconds(timeoutMs),
-            })
-            {
-                return udtTag.Read();
-            }
-        }
-
-        private TagInfo[] ReadTagInfo(LogixTarget target, int timeoutMs = 5000)
-        {
-            using (var tagList = new Tag<TagInfoPlcMapper, TagInfo[]>
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = "@tags",
-                Timeout = TimeSpan.FromMilliseconds(timeoutMs),
-            })
-            {
-                return tagList.Read();
-            }
-        }
-
-        private TagInfo[] ReadProgramTags(LogixTarget target, string program, int timeoutMs = 5000)
-        {
-            using (var programTags = new Tag<TagInfoPlcMapper, TagInfo[]>
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = $"{program}.@tags",
-                Timeout = TimeSpan.FromMilliseconds(timeoutMs)
-            })
-            {
-                return programTags.Read();
-            }
         }
 
         public void PrintTags(IEnumerable<TagDefinition> tags)

@@ -31,7 +31,8 @@ namespace TcHmiLogixDriver
         private LogixDriverConfig configuration = new LogixDriverConfig();
 
         //private LogixDriver driver = LogixDriver.Instance;
-        private DynamicSymbolsProvider symbolProvider;
+        //private DynamicSymbolsProvider symbolProvider;
+        private Value listSymbols = new Value();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -63,26 +64,25 @@ namespace TcHmiLogixDriver
 
             if (configuration.Targets.Count > 0)
             {
-                var dict = new Dictionary<string, Symbol>();
-                JSchema schema = JSchema.Parse(@"{
-                  'type': 'object',
-                  'allowMapping': false,
-                  'properties': {
-                    'name': {'type': 'string'},
-                    'roles': { 'type': 'array'},
-                    'childObj': {
-                        'type': 'object',
-                        'properties': {
-                            'one': {'type': 'number'},
-                            'two': {'type': 'boolean'}
-                        }
-                     }
-                  }
-                }");
+                var definitions = new Value();
+                var properties = new Value();
 
-                dict.Add("SomeTest", new LogixSymbol(new JsonSchemaValue(schema)));
+                var udt = new Value();
+                udt.Add("type", "object");
+                var udtProps = new Value();
+                udtProps.Add("type", "object");
+                var member = new Value();
+                member.Add("$ref", "tchmi:general#/definitions/DINT");
+                udtProps.Add("SomeDINT", member);
+                udt.Add("properties", udtProps);
+                definitions.Add("MyUDT", udt);
 
-                symbolProvider = new DynamicSymbolsProvider(dict);
+                var udtInstance = new Value();
+                udtInstance.Add("$ref", "#/definitions/MyUDT");
+                properties.Add("MyUdtInstance", udtInstance);
+
+                listSymbols.Add("definitions", definitions);
+                listSymbols.Add("properties", properties);
             }
         }
 
@@ -95,13 +95,17 @@ namespace TcHmiLogixDriver
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
-                foreach (var command in symbolProvider.HandleCommands(e.Commands))
+                foreach (var command in e.Commands)
                 {
                     try
                     {
                         // Use the mapping to check which command is requested
                         switch (command.Mapping)
                         {
+                            case "ListSymbols":
+                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+                                command.ReadValue = listSymbols;
+                                break;
                             case "Diagnostics":
                                 command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
                                 command.ReadValue = GetDiagnostics();

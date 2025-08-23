@@ -12,8 +12,9 @@ namespace ConsoleTest
         public PlcType PlcType { get; }
         public Protocol Protocol { get; }
 
-        private Dictionary<ushort, TypeDefinition> udtIdMap = new Dictionary<ushort, TypeDefinition>();
-        private Dictionary<string, TagDefinition> tagMap = new Dictionary<string, TagDefinition>();
+        // map of tags
+        private readonly Dictionary<string, TagDefinition> tags = new();
+        public IReadOnlyDictionary<string, TagDefinition> Tags => tags;
 
         public LogixTarget(string Name, string Gateway, string Path, PlcType PlcType, Protocol Protocol)
         {
@@ -24,57 +25,57 @@ namespace ConsoleTest
             this.Protocol = Protocol;
         }
 
+        bool TryGetTag(string name, out TagDefinition? tag) => tags.TryGetValue(name, out tag);
+
         public void AddTag(TagDefinition tag)
         {
-            tagMap.Add(tag.Name, tag);
+            tags.Add(tag.Name, tag);
 
-            if (tag.Type.Members?.Count > 0)
-                GetChildTags(tag, tag.Name, tagMap);
+            //if (tag.Type.Members?.Count > 0)
+            //{
+            //    AddChildTags(tag, tag.Name, tags);
+            //    //var children = tag.Type.Members?.SelectMany(m =>
+            //    //{
+            //    //    return m.Type.Members;
+            //    //});
+            //}
         }
 
-        private void GetChildTags(TagDefinition parent, string path, Dictionary<string, TagDefinition> children)
+        public void AddTags(IEnumerable<TagDefinition> tagList)
         {
-            if (parent.Type.Members is null) return;
-
-            foreach (var m in parent.Type.Members)
+            foreach (var tag in tagList)
             {
-                string name;
-                if (parent.Type.Name.Contains("ARRAY"))
-                    name = $"{path}[{m.Name}]";
-                else
-                    name = $"{path}.{m.Name}";
-
-                children.Add(name, m);
-                if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
-                    GetChildTags(m, name, children);
+                if (!tags.ContainsKey(tag.Name))
+                {
+                    tags.Add(tag.Name, tag);
+                }
             }
         }
 
-        public void Debug()
-        {
-            var tags = JsonSerializer.Serialize(tagMap);
-            File.WriteAllText("tags.json", tags);
-            var udts = JsonSerializer.Serialize(udtIdMap);
-            File.WriteAllText("udts.json", udts);
-        }
+        //private void AddChildTags(TagDefinition parent, string path, Dictionary<string, TagDefinition> children)
+        //{
+        //    if (parent.Type.Members is null) return;
 
-        public void AddUdtDef(ushort Id, TypeDefinition udtTag)
-        {
-            udtIdMap.TryAdd(Id, udtTag);
-        }
+        //    foreach (var m in parent.Type.Members)
+        //    {
+        //        string name;
+        //        if (parent.Type.Name.Contains("ARRAY"))
+        //            name = $"{path}[{m.Name}]";
+        //        else
+        //            name = $"{path}.{m.Name}";
 
-        public bool TryGetUdtDef(ushort Id, out TypeDefinition? udtDef)
-        {
-            if (udtIdMap.TryGetValue(Id, out TypeDefinition? def))
-            {
-                udtDef = def;
-                return true;
-            }
-            else
-            {
-                udtDef = null;
-                return false;
-            }
-        }
+        //        children.Add(name, m);
+        //        if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
+        //            AddChildTags(m, name, children);
+        //    }
+        //}
+
+        //public void Debug()
+        //{
+        //    var tags = JsonSerializer.Serialize(tagMap);
+        //    File.WriteAllText("tags.json", tags);
+        //    var udts = JsonSerializer.Serialize(udtIdMap);
+        //    File.WriteAllText("udts.json", udts);
+        //}
     }
 }

@@ -1,9 +1,10 @@
-﻿using System;
+﻿using libplctag.DataTypes;
+using System;
 
 namespace ConsoleTest
 {
     public record TagDefinition(string Name, TypeDefinition Type);
-    public record TypeDefinition(string Name, ushort Code, uint Dims = 0, List<TagDefinition>? Members = null);
+    public record TypeDefinition(ushort Code, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
 
     static class LogixTypes
     {
@@ -48,6 +49,52 @@ namespace ConsoleTest
                 return $"SystemType(0x{typeCode:X4})";
             else 
                 return $"UnknownType(0x{typeCode:X4})";
+        }
+
+        // resolve types
+        public static TypeDefinition ResolveType(TypeDefinition type, 
+            Func<TypeDefinition, TypeDefinition> arrayResolver,
+            Func<TypeDefinition, TypeDefinition> udtResolver)
+        {
+            if (IsArray(type.Code))
+            {
+                return arrayResolver(type);
+            }
+            else if (IsUdt(type.Code))
+            {
+                return udtResolver(type);
+            }
+            else
+            {
+                return new TypeDefinition(type.Code, ResolveTypeName(type.Code));
+            }
+        }
+
+        public static TypeDefinition ArrayResolver(TypeDefinition type, Func<TypeDefinition, TypeDefinition> typeResolver)
+        {
+            var baseTypeCode = GetArrayBaseType(type.Code);
+            var baseType = typeResolver(new TypeDefinition(baseTypeCode));
+            var members = Enumerable.Range(0, (int)type.Dims)
+                .Select(m => new TagDefinition($"{m}", baseType))
+                .ToList();
+
+            return new TypeDefinition(type.Code, $"ARRAY OF {baseType.Name}", type.Dims, members);
+        }
+
+        public static TypeDefinition UdtResolver(TypeDefinition type, Dictionary<ushort, TypeDefinition> typeCache, Func<TypeDefinition, TypeDefinition> typeResolver, Func<ushort, UdtInfo> readUdtInfo)
+        {
+            var udtId = GetUdtId(type.Code);
+            if (typeCache.TryGetValue(udtId, out var cached))
+                return cached;
+
+            var udtInfo = readUdtInfo(udtId);
+            var members = udtInfo.Fields
+                .Select(m => new TagDefinition(m.Name, typeResolver(new TypeDefinition(m.Type, Dims: m.Metadata))))
+                .ToList();
+
+            var udtDef = new TypeDefinition(type.Code, udtInfo.Name, type.Dims, members);
+            typeCache.Add(udtId, udtDef);
+            return udtDef;
         }
     }
 }

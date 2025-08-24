@@ -75,22 +75,17 @@ namespace ConsoleTest
         public IEnumerable<TagDefinition> LoadTags(LogixTarget target)
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
-            
-            UdtInfo udtInfoHandler(ushort udtId) => tagReader.ReadUdtInfo(target, udtId);
-            TypeDefinition arrayResolver(TypeDefinition type) => LogixTypes.ArrayResolver(type, typeResolver);
-            TypeDefinition udtResolver(TypeDefinition type) => LogixTypes.UdtResolver(type, typeCache, typeResolver, udtInfoHandler);
-            TypeDefinition typeResolver(TypeDefinition type) => LogixTypes.ResolveType(type, arrayResolver, udtResolver);
 
-            TagDefinition GetTagDefinition(TagInfo tag)
-            {
-                var type = typeResolver(new TypeDefinition(tag.Type, Dims: tag.Dimensions[0]));
-                return new TagDefinition(tag.Name, type);
-            }
+            Func<ushort, UdtInfo> udtInfoHandler = (udtInfo) => 
+                tagReader.ReadUdtInfo(target, udtInfo);
+
+            Func<TagInfo, TagDefinition> getTagDefintion = (TagInfo tag) =>
+                new TagDefinition(tag.Name, LogixTypes.ResolveType(tag, typeCache, udtInfoHandler));
 
             var tagInfos = tagReader.ReadTagInfo(target);
 
-            var controllerTags = ResolveControllerTags(tagInfos, GetTagDefinition);
-            var programTags = ResolveProgramTags(tagInfos, GetTagDefinition, (string program) => tagReader.ReadProgramTags(target, program));
+            var controllerTags = ResolveControllerTags(tagInfos, getTagDefintion);
+            var programTags = ResolveProgramTags(tagInfos, getTagDefintion, (string program) => tagReader.ReadProgramTags(target, program));
 
             return programTags.Concat(controllerTags);
         }
@@ -134,7 +129,7 @@ namespace ConsoleTest
         {
             if (parent.Type.Members is null) return;
 
-            var space = new String(' ', (level * 2));
+            var space = new String('.', level);
             foreach(var m in parent.Type.Members)
             {
                 string name;

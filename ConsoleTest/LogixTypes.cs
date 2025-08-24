@@ -51,49 +51,54 @@ namespace ConsoleTest
                 return $"UnknownType(0x{typeCode:X4})";
         }
 
-        // resolve types
-        public static TypeDefinition ResolveType(TypeDefinition type, 
-            Func<TypeDefinition, TypeDefinition> arrayResolver,
-            Func<TypeDefinition, TypeDefinition> udtResolver)
+
+        public static TypeDefinition ResolveType(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
         {
-            if (IsArray(type.Code))
+            Func<TagInfo, TypeDefinition> callback = (TagInfo tagInfo) => ResolveType(tagInfo, typeCache, readUdtInfo);
+            TypeDefinition typeDef;
+
+            if (IsArray(tagInfo.Type))
             {
-                return arrayResolver(type);
+                typeDef = ArrayResolver(tagInfo, callback);
             }
-            else if (IsUdt(type.Code))
+            else if (IsUdt(tagInfo.Type))
             {
-                return udtResolver(type);
+                var udtId = GetUdtId(tagInfo.Type);
+                if (typeCache.TryGetValue(udtId, out var cached))
+                    return cached;
+
+                typeDef = UdtResolver(tagInfo, readUdtInfo, callback);
+
+                typeCache.Add(udtId, typeDef);
             }
             else
             {
-                return new TypeDefinition(type.Code, ResolveTypeName(type.Code));
+                typeDef = new TypeDefinition(tagInfo.Type, ResolveTypeName(tagInfo.Type));
             }
+
+            return typeDef;
         }
 
-        public static TypeDefinition ArrayResolver(TypeDefinition type, Func<TypeDefinition, TypeDefinition> typeResolver)
+        public static TypeDefinition ArrayResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
-            var baseTypeCode = GetArrayBaseType(type.Code);
-            var baseType = typeResolver(new TypeDefinition(baseTypeCode));
-            var members = Enumerable.Range(0, (int)type.Dims)
+            var baseTypeCode = GetArrayBaseType(tagInfo.Type);
+            var baseType = resolveType(new TagInfo { Type = baseTypeCode });
+            var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
                 .Select(m => new TagDefinition($"{m}", baseType))
                 .ToList();
-
-            return new TypeDefinition(type.Code, $"ARRAY OF {baseType.Name}", type.Dims, members);
+            return new TypeDefinition(tagInfo.Type, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
         }
 
-        public static TypeDefinition UdtResolver(TypeDefinition type, Dictionary<ushort, TypeDefinition> typeCache, Func<TypeDefinition, TypeDefinition> typeResolver, Func<ushort, UdtInfo> readUdtInfo)
+        public static TypeDefinition UdtResolver(TagInfo tagInfo, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
-            var udtId = GetUdtId(type.Code);
-            if (typeCache.TryGetValue(udtId, out var cached))
-                return cached;
-
+            var udtId = GetUdtId(tagInfo.Type);
             var udtInfo = readUdtInfo(udtId);
             var members = udtInfo.Fields
-                .Select(m => new TagDefinition(m.Name, typeResolver(new TypeDefinition(m.Type, Dims: m.Metadata))))
+                .Select(m => new TagDefinition(m.Name, resolveType(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] })))
                 .ToList();
 
-            var udtDef = new TypeDefinition(type.Code, udtInfo.Name, type.Dims, members);
-            typeCache.Add(udtId, udtDef);
+            var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Name, tagInfo.Dimensions[0], members);
+            
             return udtDef;
         }
     }

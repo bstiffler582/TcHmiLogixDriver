@@ -55,31 +55,22 @@ namespace ConsoleTest
         public static TypeDefinition ResolveType(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
         {
             Func<TagInfo, TypeDefinition> callback = (TagInfo tagInfo) => ResolveType(tagInfo, typeCache, readUdtInfo);
-            TypeDefinition typeDef;
 
             if (IsArray(tagInfo.Type))
             {
-                typeDef = ArrayResolver(tagInfo, callback);
+                return ArrayResolver(tagInfo, callback);
             }
             else if (IsUdt(tagInfo.Type))
             {
-                var udtId = GetUdtId(tagInfo.Type);
-                if (typeCache.TryGetValue(udtId, out var cached))
-                    return cached;
-
-                typeDef = UdtResolver(tagInfo, readUdtInfo, callback);
-
-                typeCache.Add(udtId, typeDef);
+                return UdtResolver(tagInfo, typeCache, readUdtInfo, callback);
             }
             else
             {
-                typeDef = new TypeDefinition(tagInfo.Type, ResolveTypeName(tagInfo.Type));
+                return new TypeDefinition(tagInfo.Type, ResolveTypeName(tagInfo.Type));
             }
-
-            return typeDef;
         }
 
-        public static TypeDefinition ArrayResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
+        private static TypeDefinition ArrayResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
             var baseTypeCode = GetArrayBaseType(tagInfo.Type);
             var baseType = resolveType(new TagInfo { Type = baseTypeCode });
@@ -89,16 +80,21 @@ namespace ConsoleTest
             return new TypeDefinition(tagInfo.Type, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
         }
 
-        public static TypeDefinition UdtResolver(TagInfo tagInfo, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
+        private static TypeDefinition UdtResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
             var udtId = GetUdtId(tagInfo.Type);
+            if (typeCache.TryGetValue(udtId, out var cached))
+                return cached;
+
             var udtInfo = readUdtInfo(udtId);
             var members = udtInfo.Fields
                 .Select(m => new TagDefinition(m.Name, resolveType(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] })))
                 .ToList();
 
             var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Name, tagInfo.Dimensions[0], members);
-            
+
+            typeCache.Add(udtId, udtDef);
+
             return udtDef;
         }
     }

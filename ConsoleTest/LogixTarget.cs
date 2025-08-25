@@ -1,6 +1,4 @@
 ﻿using libplctag;
-using System.Text.Json;
-using System.IO;
 
 namespace ConsoleTest
 {
@@ -15,9 +13,11 @@ namespace ConsoleTest
 
         // map of tags
         private readonly Dictionary<string, TagDefinition> tags = new();
-        public IReadOnlyDictionary<string, TagDefinition> Tags => tags;
+        public IEnumerable<TagDefinition> Tags => tags.Values;
 
-        public LogixTarget(string Name, string Gateway, 
+        public LogixTarget(
+            string Name, 
+            string Gateway, 
             string Path = "1,0", 
             PlcType PlcType = PlcType.ControlLogix, 
             Protocol Protocol = Protocol.ab_eip, 
@@ -35,7 +35,7 @@ namespace ConsoleTest
 
         public void AddTag(TagDefinition tag)
         {
-            tags.Add(tag.Name, tag);
+            tags.TryAdd(tag.Name, tag);
 
             //if (tag.Type.Members?.Count > 0)
             //{
@@ -50,12 +50,7 @@ namespace ConsoleTest
         public void AddTags(IEnumerable<TagDefinition> tagList)
         {
             foreach (var tag in tagList)
-            {
-                if (!tags.ContainsKey(tag.Name))
-                {
-                    tags.Add(tag.Name, tag);
-                }
-            }
+                tags.TryAdd(tag.Name, tag);
         }
 
         //private void AddChildTags(TagDefinition parent, string path, Dictionary<string, TagDefinition> children)

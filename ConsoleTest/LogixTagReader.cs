@@ -8,6 +8,7 @@ namespace ConsoleTest
         TagInfo[] ReadTagInfo(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
+        Tag ReadTagValue(LogixTarget target, string tagName);
     }
 
     public class LogixTagReader : ILogixTagReader
@@ -58,6 +59,22 @@ namespace ConsoleTest
             {
                 return programTags.Read();
             }
+        }
+
+        public Tag ReadTagValue(LogixTarget target, string tagName)
+        {
+            var tag = new Tag
+            {
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = tagName,
+                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
+            };
+
+            tag.Read();
+            return tag;
         }
     }
 }

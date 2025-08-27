@@ -1,4 +1,5 @@
-﻿using libplctag.DataTypes;
+﻿using libplctag;
+using libplctag.DataTypes;
 using System;
 
 namespace ConsoleTest
@@ -96,6 +97,36 @@ namespace ConsoleTest
             typeCache.Add(udtId, udtDef);
 
             return udtDef;
+        }
+
+        public static object ResolveValue(Tag tag, TagDefinition definition)
+        {
+            return $"Type: {definition.Type.Name}, Value: {ResolvePrimitiveValue(tag, definition.Type.Code)}";
+        }
+
+        private static object ResolvePrimitiveValue(Tag tag, ushort typeCode)
+        {
+            Func<Tag, byte[]> ReadRawBytes = (Tag tag) =>
+            {
+                var size = tag.GetSize();
+                var buffer = new byte[size];
+                for (int i = 0; i < size; i++)
+                    buffer[i] = tag.GetUInt8(i);
+                return buffer;
+            };
+
+            return (Code)typeCode switch
+            {
+                Code.BOOL => tag.GetBit(0),         
+                Code.SINT or Code.USINT => tag.GetInt8(0),
+                Code.INT or Code.UINT => tag.GetInt16(0),
+                Code.DINT or Code.UDINT => tag.GetInt32(0),
+                Code.LINT or Code.ULINT => tag.GetInt64(0),
+                Code.REAL => tag.GetFloat32(0),
+                Code.LREAL => tag.GetFloat64(0),
+                Code.STRING => tag.GetString(0),
+                _ => ReadRawBytes(tag)
+            };
         }
     }
 }

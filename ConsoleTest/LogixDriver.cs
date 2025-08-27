@@ -55,6 +55,18 @@ namespace ConsoleTest
                 .ToList();
         }
 
+        public object ReadTagValue(LogixTarget target, string tagName)
+        {
+            var definition = target.GetTagDefinitionByName(tagName);
+            if (definition is null)
+                return "Tag not found!";
+            else
+            {
+                var tag = tagReader.ReadTagValue(target, tagName);
+                return LogixTypes.ResolveValue(tag, definition);
+            }
+        }
+
         public void PrintTags(IEnumerable<TagDefinition> tags)
         {
             foreach (var tag in tags)

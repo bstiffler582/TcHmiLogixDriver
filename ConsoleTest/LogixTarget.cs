@@ -11,9 +11,12 @@ namespace ConsoleTest
         public Protocol Protocol { get; }
         public int TimeoutMs { get; set; } = 5000;
 
+        // map of tag definitions
+        private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
+        public IDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
+
         // map of tags
-        private readonly Dictionary<string, TagDefinition> tags = new();
-        public IEnumerable<TagDefinition> Tags => tags.Values;
+        private readonly Dictionary<string, Tag> tags = new();
 
         public LogixTarget(
             string Name, 
@@ -31,11 +34,40 @@ namespace ConsoleTest
             this.TimeoutMs = TimeoutMs;
         }
 
-        bool TryGetTag(string name, out TagDefinition? tag) => tags.TryGetValue(name, out tag);
+        bool TryGetTagDefinition(string name, out TagDefinition? tag) => tagDefinitions.TryGetValue(name, out tag);
 
-        public void AddTag(TagDefinition tag)
+        // flatten so we don't have to do this
+        public TagDefinition? GetTagDefinitionByName(string name)
         {
-            tags.TryAdd(tag.Name, tag);
+            var pathArray = name.Split('.');
+            var definition = TryGetTagDefinition(pathArray[0], out var def) ? def : null;
+
+            if (definition is null) return null;
+
+            // is root tag
+            if (pathArray[0] == name && pathArray.Length == 1)
+                return definition;
+
+            // resolve path
+            foreach (var path in pathArray.Skip(1))
+            {
+                if (definition?.Type.Members is null) return null;
+                definition = definition.Type.Members.FirstOrDefault(t => t.Name == path);
+            }
+
+            return definition;
+        }
+
+        public void AddTagDefinition(TagDefinition tag)
+        {
+            //tagDefinitions.TryAdd(tag.Name, tag);
+            var flattened = Flatten(tag);
+            foreach (var t in flattened)
+                tagDefinitions.TryAdd(t.Path, t.TagDef);
+
+                //.ToDictionary(x => x.Path, x => x.Node);
+            // Flatten into dictionary directly:
+            //var dict = root.Flatten().ToDictionary(x => x.Path, x => x.Node);
 
             //if (tag.Type.Members?.Count > 0)
             //{
@@ -44,13 +76,40 @@ namespace ConsoleTest
             //    //{
             //    //    return m.Type.Members;
             //    //});
-            //}
+            //} 
         }
 
-        public void AddTags(IEnumerable<TagDefinition> tagList)
+        public void AddTagDefinition(IEnumerable<TagDefinition> tagList)
         {
             foreach (var tag in tagList)
-                tags.TryAdd(tag.Name, tag);
+            {
+                var flattened = Flatten(tag).ToList();
+                foreach (var t in flattened)
+                    tagDefinitions.TryAdd(t.Path, t.TagDef);
+            }
+        }
+
+        private static IEnumerable<(string Path, TagDefinition TagDef)> Flatten(TagDefinition node, string parentPath = "")
+        {
+            string fullPath;
+            if (int.TryParse(node.Name, out var idx) && !string.IsNullOrEmpty(parentPath))
+                fullPath = $"{parentPath}[{idx}]";
+            else
+                fullPath = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath}.{node.Name}";
+
+            // yield the current node
+            yield return (fullPath, node);
+
+            if (node.Type.Name.Contains("STRING"))
+                yield break;
+
+            // recurse into children
+            if (node.Type.Members is not null)
+            {
+                foreach (var child in node.Type.Members.SelectMany(c => Flatten(c, fullPath)))
+                    yield return child;
+            }
+            
         }
 
         //private void AddChildTags(TagDefinition parent, string path, Dictionary<string, TagDefinition> children)

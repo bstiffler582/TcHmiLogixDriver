@@ -11,6 +11,18 @@ namespace ConsoleTest
             this.tagReader = tagReader ?? new LogixTagReader();
         }
 
+        public object ReadTagValue(LogixTarget target, string tagName)
+        {
+            var definition = target.TryGetTagDefinition(tagName);
+            if (definition is null)
+                return "Tag not found!";
+            else
+            {
+                var tag = tagReader.ReadTagValue(target, tagName);
+                return LogixTypes.ResolveValue(tag, definition);
+            }
+        }
+
         public IEnumerable<TagDefinition> LoadTags(LogixTarget target)
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
@@ -55,44 +67,32 @@ namespace ConsoleTest
                 .ToList();
         }
 
-        public object ReadTagValue(LogixTarget target, string tagName)
-        {
-            var definition = target.GetTagDefinitionByName(tagName);
-            if (definition is null)
-                return "Tag not found!";
-            else
-            {
-                var tag = tagReader.ReadTagValue(target, tagName);
-                return LogixTypes.ResolveValue(tag, definition);
-            }
-        }
+        //public void PrintTags(IEnumerable<TagDefinition> tags)
+        //{
+        //    foreach (var tag in tags)
+        //    {
+        //        Console.WriteLine($"Name={tag.Name} Type={tag.Type.Name}");
+        //        PrintChildTags(tag, tag.Name, 1);
+        //    }
+        //}
 
-        public void PrintTags(IEnumerable<TagDefinition> tags)
-        {
-            foreach (var tag in tags)
-            {
-                Console.WriteLine($"Name={tag.Name} Type={tag.Type.Name}");
-                PrintChildTags(tag, tag.Name, 1);
-            }
-        }
+        //private void PrintChildTags(TagDefinition parent, string path, int level)
+        //{
+        //    if (parent.Type.Members is null) return;
 
-        private void PrintChildTags(TagDefinition parent, string path, int level)
-        {
-            if (parent.Type.Members is null) return;
+        //    var space = new String('.', level);
+        //    foreach(var m in parent.Type.Members)
+        //    {
+        //        string name;
+        //        if (parent.Type.Name.Contains("ARRAY"))
+        //            name = $"{path}[{m.Name}]";
+        //        else
+        //            name = $"{path}.{m.Name}";
 
-            var space = new String('.', level);
-            foreach(var m in parent.Type.Members)
-            {
-                string name;
-                if (parent.Type.Name.Contains("ARRAY"))
-                    name = $"{path}[{m.Name}]";
-                else
-                    name = $"{path}.{m.Name}";
-
-                Console.WriteLine($"{space}Name={name} Type={m.Type.Name}");
-                if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
-                    PrintChildTags(m, name, level + 1);
-            }
-        }
+        //        Console.WriteLine($"{space}Name={name} Type={m.Type.Name}");
+        //        if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
+        //            PrintChildTags(m, name, level + 1);
+        //    }
+        //}
     }
 }

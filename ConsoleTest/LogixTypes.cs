@@ -20,7 +20,8 @@ namespace ConsoleTest
             STRINGN = 0xD9, SHORT_STRING = 0xDA, TIME = 0xDB, EPATH = 0xDC,
             ENGUNIT = 0xDD, STRINGI = 0xDE,
             ABBREV_STRUCT = 0xA0, ABBREV_ARRAY = 0xA1,
-            FULL_STRUCT = 0xA2, FULL_ARRAY = 0xA3
+            FULL_STRUCT = 0xA2, FULL_ARRAY = 0xA3,
+            STRING_STRUCT = 0x8FCE
         }
 
         const ushort TYPE_IS_ARRAY = 0x2000;
@@ -115,7 +116,7 @@ namespace ConsoleTest
                 return buffer;
             };
 
-            return (Code)typeCode switch
+            return (Code)(typeCode) switch
             {
                 Code.BOOL => tag.GetBit(0),         
                 Code.SINT or Code.USINT => tag.GetInt8(0),
@@ -124,7 +125,8 @@ namespace ConsoleTest
                 Code.LINT or Code.ULINT => tag.GetInt64(0),
                 Code.REAL => tag.GetFloat32(0),
                 Code.LREAL => tag.GetFloat64(0),
-                Code.STRING => tag.GetString(0),
+                Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
+                    => tag.GetString(0),
                 _ => ReadRawBytes(tag)
             };
         }

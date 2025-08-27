@@ -34,49 +34,14 @@ namespace ConsoleTest
             this.TimeoutMs = TimeoutMs;
         }
 
-        bool TryGetTagDefinition(string name, out TagDefinition? tag) => tagDefinitions.TryGetValue(name, out tag);
-
-        // flatten so we don't have to do this
-        public TagDefinition? GetTagDefinitionByName(string name)
-        {
-            var pathArray = name.Split('.');
-            var definition = TryGetTagDefinition(pathArray[0], out var def) ? def : null;
-
-            if (definition is null) return null;
-
-            // is root tag
-            if (pathArray[0] == name && pathArray.Length == 1)
-                return definition;
-
-            // resolve path
-            foreach (var path in pathArray.Skip(1))
-            {
-                if (definition?.Type.Members is null) return null;
-                definition = definition.Type.Members.FirstOrDefault(t => t.Name == path);
-            }
-
-            return definition;
-        }
+        public TagDefinition? TryGetTagDefinition(string name) => 
+            tagDefinitions.TryGetValue(name, out var tag) ? tag : null;
 
         public void AddTagDefinition(TagDefinition tag)
         {
-            //tagDefinitions.TryAdd(tag.Name, tag);
             var flattened = Flatten(tag);
             foreach (var t in flattened)
                 tagDefinitions.TryAdd(t.Path, t.TagDef);
-
-                //.ToDictionary(x => x.Path, x => x.Node);
-            // Flatten into dictionary directly:
-            //var dict = root.Flatten().ToDictionary(x => x.Path, x => x.Node);
-
-            //if (tag.Type.Members?.Count > 0)
-            //{
-            //    AddChildTags(tag, tag.Name, tags);
-            //    //var children = tag.Type.Members?.SelectMany(m =>
-            //    //{
-            //    //    return m.Type.Members;
-            //    //});
-            //} 
         }
 
         public void AddTagDefinition(IEnumerable<TagDefinition> tagList)
@@ -97,13 +62,11 @@ namespace ConsoleTest
             else
                 fullPath = string.IsNullOrEmpty(parentPath) ? node.Name : $"{parentPath}.{node.Name}";
 
-            // yield the current node
             yield return (fullPath, node);
 
             if (node.Type.Name.Contains("STRING"))
                 yield break;
 
-            // recurse into children
             if (node.Type.Members is not null)
             {
                 foreach (var child in node.Type.Members.SelectMany(c => Flatten(c, fullPath)))
@@ -111,24 +74,6 @@ namespace ConsoleTest
             }
             
         }
-
-        //private void AddChildTags(TagDefinition parent, string path, Dictionary<string, TagDefinition> children)
-        //{
-        //    if (parent.Type.Members is null) return;
-
-        //    foreach (var m in parent.Type.Members)
-        //    {
-        //        string name;
-        //        if (parent.Type.Name.Contains("ARRAY"))
-        //            name = $"{path}[{m.Name}]";
-        //        else
-        //            name = $"{path}.{m.Name}";
-
-        //        children.Add(name, m);
-        //        if (m.Type.Members?.Count > 0 && m.Type.Name != "STRING")
-        //            AddChildTags(m, name, children);
-        //    }
-        //}
 
         //public void Debug()
         //{

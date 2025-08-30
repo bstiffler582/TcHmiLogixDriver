@@ -18,8 +18,8 @@ namespace ConsoleTest
                 return "Tag not found!";
             else
             {
-                var tag = tagReader.ReadTagValue(target, tagName);
-                return LogixTypes.ResolveValue(tag, definition);
+                var tag = tagReader.ReadTagValue(target, tagName, definition);
+                return LogixTypes.ValueResolver(tag, definition);
             }
         }
 
@@ -31,7 +31,7 @@ namespace ConsoleTest
                 tagReader.ReadUdtInfo(target, udtInfo);
 
             Func<TagInfo, TagDefinition> getTagDefintion = (TagInfo tag) =>
-                new TagDefinition(tag.Name, LogixTypes.ResolveType(tag, typeCache, udtInfoHandler));
+                new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoHandler));
 
             var tagInfos = tagReader.ReadTagInfo(target);
 
@@ -62,7 +62,7 @@ namespace ConsoleTest
                         .Where(t => !LogixTypes.ResolveTypeName(t.Type).Contains("SystemType"))
                         .Select(getTagDefinition)
                         .ToList();
-                    return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Name, 0, progTags));
+                    return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, 0, progTags));
                 })
                 .ToList();
         }

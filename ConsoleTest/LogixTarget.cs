@@ -13,7 +13,9 @@ namespace ConsoleTest
 
         // map of tag definitions
         private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
+        private readonly Dictionary<string, TagDefinition> tagDefinitionsFlat = new();
         public IDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
+        public IDictionary<string, TagDefinition> TagDefinitionsFlat => tagDefinitionsFlat;
 
         // map of tags
         private readonly Dictionary<string, Tag> tags = new();
@@ -35,22 +37,24 @@ namespace ConsoleTest
         }
 
         public TagDefinition? TryGetTagDefinition(string name) => 
-            tagDefinitions.TryGetValue(name, out var tag) ? tag : null;
+            tagDefinitionsFlat.TryGetValue(name, out var tag) ? tag : null;
 
         public void AddTagDefinition(TagDefinition tag)
         {
+            tagDefinitions.Add(tag.Name, tag);
             var flattened = Flatten(tag);
             foreach (var t in flattened)
-                tagDefinitions.TryAdd(t.Path, t.TagDef);
+                tagDefinitionsFlat.TryAdd(t.Path, t.TagDef);
         }
 
         public void AddTagDefinition(IEnumerable<TagDefinition> tagList)
         {
             foreach (var tag in tagList)
             {
+                tagDefinitions.Add(tag.Name, tag);
                 var flattened = Flatten(tag).ToList();
                 foreach (var t in flattened)
-                    tagDefinitions.TryAdd(t.Path, t.TagDef);
+                    tagDefinitionsFlat.TryAdd(t.Path, t.TagDef);
             }
         }
 

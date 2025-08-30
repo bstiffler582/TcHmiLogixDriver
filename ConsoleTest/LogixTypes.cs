@@ -1,11 +1,12 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
+using libplctag.NativeImport;
 using System;
 
 namespace ConsoleTest
 {
-    public record TagDefinition(string Name, TypeDefinition Type);
-    public record TypeDefinition(ushort Code, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
+    public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0);
+    public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
 
     static class LogixTypes
     {
@@ -45,8 +46,6 @@ namespace ConsoleTest
         {
             if (Enum.IsDefined(typeof(Code), typeCode))
                 return ((Code)typeCode).ToString();
-            else if (IsUdt(typeCode) && (typeCode & 0x00FF) == 0xCE)
-                return "STRING";
             else if ((typeCode & 0x1000) != 0)
                 return $"SystemType(0x{typeCode:X4})";
             else 
@@ -54,35 +53,36 @@ namespace ConsoleTest
         }
 
 
-        public static TypeDefinition ResolveType(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
+        public static TypeDefinition TypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
         {
-            Func<TagInfo, TypeDefinition> callback = (TagInfo tagInfo) => ResolveType(tagInfo, typeCache, readUdtInfo);
+            Func<TagInfo, TypeDefinition> callback = (TagInfo tagInfo) => TypeResolver(tagInfo, typeCache, readUdtInfo);
 
             if (IsArray(tagInfo.Type))
             {
-                return ArrayResolver(tagInfo, callback);
+                return ArrayTypeResolver(tagInfo, callback);
             }
             else if (IsUdt(tagInfo.Type))
             {
-                return UdtResolver(tagInfo, typeCache, readUdtInfo, callback);
+                return UdtTypeResolver(tagInfo, typeCache, readUdtInfo, callback);
             }
             else
             {
-                return new TypeDefinition(tagInfo.Type, ResolveTypeName(tagInfo.Type));
+                var length = (tagInfo.Length > 0) ? tagInfo.Length : GetTypeLength(tagInfo.Type);
+                return new TypeDefinition(tagInfo.Type, length, ResolveTypeName(tagInfo.Type));
             }
         }
 
-        private static TypeDefinition ArrayResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
+        private static TypeDefinition ArrayTypeResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
             var baseTypeCode = GetArrayBaseType(tagInfo.Type);
             var baseType = resolveType(new TagInfo { Type = baseTypeCode });
             var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
-                .Select(m => new TagDefinition($"{m}", baseType))
+                .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
                 .ToList();
-            return new TypeDefinition(tagInfo.Type, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
+            return new TypeDefinition(tagInfo.Type, tagInfo.Dimensions[0] * baseType.Length, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
         }
 
-        private static TypeDefinition UdtResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
+        private static TypeDefinition UdtTypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
         {
             var udtId = GetUdtId(tagInfo.Type);
             if (typeCache.TryGetValue(udtId, out var cached))
@@ -90,44 +90,77 @@ namespace ConsoleTest
 
             var udtInfo = readUdtInfo(udtId);
             var members = udtInfo.Fields
-                .Select(m => new TagDefinition(m.Name, resolveType(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] })))
+                .Select(m => new TagDefinition(m.Name, resolveType(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }), m.Offset))
                 .ToList();
 
-            var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Name, tagInfo.Dimensions[0], members);
+            var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, tagInfo.Dimensions[0], members);
 
             typeCache.Add(udtId, udtDef);
 
             return udtDef;
         }
 
-        public static object ResolveValue(Tag tag, TagDefinition definition)
+        public static object ValueResolver(Tag tag, TagDefinition definition, int offset = 0)
         {
-            return $"Type: {definition.Type.Name}, Value: {ResolvePrimitiveValue(tag, definition.Type.Code)}";
+            if (IsArray(definition.Type.Code))
+            {
+                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                    return 0;
+
+                var ret = new List<object>();
+                foreach (var m in definition.Type.Members)
+                    ret.Add(ValueResolver(tag, m, (int)(definition.Offset + m.Offset)));
+
+                return ret;
+            }
+            else if (IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            {
+                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                    return 0;
+
+                var ret = new Dictionary<string, object>();
+                foreach (var m in definition.Type.Members)
+                    ret[m.Name] = ValueResolver(tag, m, (int)(definition.Offset + m.Offset));
+
+                return ret;
+            }
+            else
+            {
+                return PrimitiveValueResolver(tag, definition.Type.Code, offset);
+            }
         }
 
-        private static object ResolvePrimitiveValue(Tag tag, ushort typeCode)
+        private static object PrimitiveValueResolver(Tag tag, ushort typeCode, int offset = 0)
         {
-            Func<Tag, byte[]> ReadRawBytes = (Tag tag) =>
-            {
-                var size = tag.GetSize();
-                var buffer = new byte[size];
-                for (int i = 0; i < size; i++)
-                    buffer[i] = tag.GetUInt8(i);
-                return buffer;
-            };
-
             return (Code)(typeCode) switch
             {
-                Code.BOOL => tag.GetBit(0),         
-                Code.SINT or Code.USINT => tag.GetInt8(0),
-                Code.INT or Code.UINT => tag.GetInt16(0),
-                Code.DINT or Code.UDINT => tag.GetInt32(0),
-                Code.LINT or Code.ULINT => tag.GetInt64(0),
-                Code.REAL => tag.GetFloat32(0),
-                Code.LREAL => tag.GetFloat64(0),
+                Code.BOOL => tag.GetBit(offset),
+                Code.SINT or Code.USINT => tag.GetInt8(offset),
+                Code.INT or Code.UINT => tag.GetInt16(offset),
+                Code.DINT or Code.UDINT => tag.GetInt32(offset),
+                Code.LINT or Code.ULINT => tag.GetInt64(offset),
+                Code.REAL => tag.GetFloat32(offset),
+                Code.LREAL => tag.GetFloat64(offset),
                 Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
-                    => tag.GetString(0),
-                _ => ReadRawBytes(tag)
+                    => tag.GetString(offset),
+                _ => throw new Exception($"Primitive type code:{typeCode:X} not handled")
+            };
+        }
+
+        private static ushort GetTypeLength(ushort typeCode)
+        {
+            return (Code)(typeCode) switch
+            {
+                Code.BOOL => 1,
+                Code.SINT or Code.USINT => 1,
+                Code.INT or Code.UINT => 2,
+                Code.DINT or Code.UDINT => 4,
+                Code.LINT or Code.ULINT => 8,
+                Code.REAL => 4,
+                Code.LREAL => 8,
+                Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
+                    => 88,
+                _ => throw new Exception($"Primitive type code:{typeCode:X} not handled")
             };
         }
     }

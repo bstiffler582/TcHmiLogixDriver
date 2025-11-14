@@ -8,7 +8,7 @@ namespace ConsoleTest
         TagInfo[] ReadTagInfo(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
-        Tag ReadTagValue(LogixTarget target, string path, TagDefinition definition);
+        Tag ReadTagValue(LogixTarget target, string path, int elements = 1);
     }
 
     public class LogixTagReader : ILogixTagReader
@@ -61,7 +61,7 @@ namespace ConsoleTest
             }
         }
 
-        public Tag ReadTagValue(LogixTarget target, string path, TagDefinition definition)
+        public Tag ReadTagValue(LogixTarget target, string path, int elements = 1)
         {
             var tag = new Tag
             {
@@ -70,7 +70,7 @@ namespace ConsoleTest
                 PlcType = target.PlcType,
                 Protocol = target.Protocol,
                 Name = path,
-                ElementCount = Math.Max((int)definition.Type.Dims, 1),
+                ElementCount = Math.Max(elements, 1),
                 Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
             };
             

@@ -18,7 +18,7 @@ namespace ConsoleTest
                 return "Tag not found!";
             else
             {
-                var tag = tagReader.ReadTagValue(target, tagName, definition);
+                var tag = tagReader.ReadTagValue(target, tagName, (int)definition.Type.Dims);
                 return LogixTypes.ValueResolver(tag, definition);
             }
         }

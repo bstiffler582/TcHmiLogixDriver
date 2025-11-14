@@ -10,5 +10,5 @@ target.AddTagDefinition(driver.LoadTags(target));
 foreach (var def in target.TagDefinitionsFlat)
     Console.WriteLine($"Path: {def.Key}; Type: {def.Value.Type.Name}; Length: {def.Value.Type.Length}; Offset: {def.Value.Offset}");
 
-var res = driver.ReadTagValue(target, "Program:MainProgram.prgReadTest");
+var res = driver.ReadTagValue(target, "structArray");
 Console.WriteLine(JsonSerializer.Serialize(res));

@@ -102,6 +102,7 @@ namespace ConsoleTest
 
         public static object ValueResolver(Tag tag, TagDefinition definition, int offset = 0)
         {
+            // need to add parent offset if nested non-primitive
             if (IsArray(definition.Type.Code))
             {
                 if (definition.Type.Members is null || definition.Type.Members.Count < 1)
@@ -109,7 +110,7 @@ namespace ConsoleTest
 
                 var ret = new List<object>();
                 foreach (var m in definition.Type.Members)
-                    ret.Add(ValueResolver(tag, m, (int)(definition.Offset + m.Offset)));
+                    ret.Add(ValueResolver(tag, m, offset + (int)m.Offset));
 
                 return ret;
             }
@@ -120,7 +121,7 @@ namespace ConsoleTest
 
                 var ret = new Dictionary<string, object>();
                 foreach (var m in definition.Type.Members)
-                    ret[m.Name] = ValueResolver(tag, m, (int)(definition.Offset + m.Offset));
+                    ret[m.Name] = ValueResolver(tag, m, offset + (int)m.Offset);
 
                 return ret;
             }

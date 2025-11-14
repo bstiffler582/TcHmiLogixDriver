@@ -5,7 +5,7 @@ namespace ConsoleTest
 {
     public interface ILogixTagReader
     {
-        TagInfo[] ReadTagInfo(LogixTarget target);
+        TagInfo[] ReadTagList(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
         Tag ReadTagValue(LogixTarget target, string path, int elements = 1);
@@ -13,7 +13,7 @@ namespace ConsoleTest
 
     public class LogixTagReader : ILogixTagReader
     {
-        public TagInfo[] ReadTagInfo(LogixTarget target)
+        public TagInfo[] ReadTagList(LogixTarget target)
         {
             using (var tagList = new Tag<TagInfoPlcMapper, TagInfo[]>
             {

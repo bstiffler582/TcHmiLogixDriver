@@ -1,7 +1,10 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
-namespace ConsoleTest
+namespace TcHmiLogixDriver.Logix
 {
     public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0);
     public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);

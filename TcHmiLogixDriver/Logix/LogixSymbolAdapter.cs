@@ -10,93 +10,85 @@ using System.Runtime.CompilerServices;
 
 namespace TcHmiLogixDriver.Logix
 {
-    public record TagDef(string Name, TypeDef Type);
-    public record TypeDef(string Name, ushort Code, uint Dims = 0, List<TagDef>? Members = null, string BaseType = "");
-
-    public static class LogixExtensions
+    public class LogixSymbolAdapter
     {
-        
-    }
+        private HashSet<string> typeCache = new HashSet<string>();
 
-    public static class LogixSymbolAdapter
-    {
-
-        public static Value ToValue(this TypeDef typeDef)
+        public Value GetDefinitions(TagDefinition tag)
         {
-            var ret = new Value();
-            if (IsPrimitve(typeDef.Name))
-            {
-                ret.Add("$ref", ToTcHmiTypeName(typeDef.Name));
-            }
-            else if (typeDef.Name.StartsWith("ARRAY"))
-            {
-                ret.Add("type", "array");
-                var items = new Value();
-                items.Add("$ref", ToTcHmiTypeName(typeDef.BaseType));
-                ret.Add("maxItems", typeDef.Dims);
-                ret.Add("minItems", typeDef.Dims);
-                ret.Add("items", items);
-            }
-            else if (typeDef.Members != null)
-            {
+            var target = new Value();
+            target.Add("type", "object");
 
+            var targetMembers = new Value();
+            targetMembers.Add("type", "object");
+
+            var ret = new Value();
+            var properties = new Value();
+            var definitions = new Value();
+
+            if (LogixTypes.IsArray(tag.Type.Code))
+            {
             }
+            else if (LogixTypes.IsUdt(tag.Type.Code))
+            {
+                var udtInstance = new Value();
+                udtInstance.Add("$ref", $"#/definitions/{tag.Type.Name}");
+                targetMembers.Add(tag.Name, udtInstance);
+
+                if (!typeCache.Contains(tag.Type.Name))
+                {
+                    GetTypeDefinition(tag, definitions);
+                }
+            }
+            else
+            {
+                var primType = new Value();
+                primType.Add("$ref", $"tchmi:general#/definitions/{tag.Type.Name}");
+                targetMembers.Add(tag.Name, primType);
+            }
+
+            target.Add("properties", targetMembers);
+            definitions.Add("Target", target);
+
+            var targetInstance = new Value();
+            targetInstance.Add("$ref", $"#/definitions/Target");
+            properties.Add("Logix", targetInstance);
+
+            ret.Add("definitions", definitions);
+            ret.Add("properties", properties);
 
             return ret;
         }
 
-        private static void TestData()
+        public Value GetTypeDefinition(TagDefinition tag, Value definitions)
         {
-            var tags = File.ReadAllText("tags.json");
-            var tagList = JsonSerializer.Deserialize<Dictionary<string, TagDef>>(tags);
+            var definition = new Value();
 
-            var udts = File.ReadAllText("udts.json");
-            var udtList = JsonSerializer.Deserialize<Dictionary<string , TypeDef>>(udts);
-        }
-
-        // TODO: use enum from console app
-        private static bool IsPrimitve(string TypeName)
-        {
-            return new List<string>()
+            if (LogixTypes.IsArray(tag.Type.Code))
             {
-                "BOOL",
-                "INT",
-                "DINT",
-                "REAL",
-                "STRING",
-                "SINT"
-            }.Contains(TypeName);
-        }
-
-        private static string ToTcHmiTypeName(string TypeName)
-        {
-            return $"tchmi:general#/definitions/{TypeName}";
-        }
-
-        // convert TypeDefs to Value to return to ListSymbols
-        public static Value GetDefinitions()
-        {
-            var udts = new List<TypeDef>();
-            // mock data
-            var members = new List<TagDef>()
+            }
+            else if (LogixTypes.IsUdt(tag.Type.Code))
             {
-                new TagDef("bTest", new TypeDef("BOOL", 0)),
-                new TagDef("nTest", new TypeDef("DINT", 0)),
-                new TagDef("fTest", new TypeDef("REAL", 0)),
-                new TagDef("sTest", new TypeDef("STRING", 0)),
-                new TagDef("arrTest", new TypeDef("ARRAY OF DINT", 0, 10, null, "DINT"))
-            };
-            var myUdt = new TypeDef("UDT_Test", 0, 0, members);
-            udts.Add(myUdt);
-            
-            var definitions = new Value();
-            definitions.Add("type", "object");
-
-            foreach (var udt in udts) {
-                definitions.Add(udt.Name, udt.ToValue());
+                definition.Add("type", "object");
+                if (tag.Type.Members?.Count > 0)
+                {
+                    var properties = new Value();
+                    properties.Add("type", "object");
+                    foreach (var member in tag.Type.Members)
+                    {
+                        properties.Add(member.Name, GetTypeDefinition(member, definitions));
+                    }
+                    definition.Add("properties", properties);
+                }
+            }
+            else
+            {
+                definition.Add("$ref", $"tchmi:general#/definitions/{tag.Type.Name}");
             }
 
-            return definitions;
+            definitions.Add(tag.Name, definition);
+
+            return definition;
         }
     }
 }

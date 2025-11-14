@@ -27,13 +27,13 @@ namespace ConsoleTest
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
 
-            Func<ushort, UdtInfo> udtInfoHandler = (udtInfo) => 
-                tagReader.ReadUdtInfo(target, udtInfo);
+            Func<ushort, UdtInfo> udtInfoReader = (udtId) => 
+                tagReader.ReadUdtInfo(target, udtId);
 
             Func<TagInfo, TagDefinition> getTagDefintion = (TagInfo tag) =>
-                new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoHandler));
+                new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader));
 
-            var tagInfos = tagReader.ReadTagInfo(target);
+            var tagInfos = tagReader.ReadTagList(target);
 
             var controllerTags = ResolveControllerTags(tagInfos, getTagDefintion);
             var programTags = ResolveProgramTags(tagInfos, getTagDefintion, (string program) => tagReader.ReadProgramTags(target, program));

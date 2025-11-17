@@ -41,6 +41,8 @@ namespace TcHmiLogixDriver
             requestListener.OnRequest += OnRequest;
             configListener.OnChange += OnConfigChange;
 
+            //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
+
             return ErrorValue.HMI_SUCCESS;
         }
 
@@ -65,9 +67,7 @@ namespace TcHmiLogixDriver
 
             if (configuration.Targets.Count > 0)
             {
-                var definitions = new Value();
-                var properties = new Value();
-
+                // tag browser testing
                 try
                 {
                     var defs = System.IO.File.ReadAllText("tags.json") is string json
@@ -75,55 +75,15 @@ namespace TcHmiLogixDriver
                     : new Dictionary<string, TagDefinition>();
 
                     var symbolAdapter = new LogixSymbolAdapter();
-                    var test = defs["ctrlrDint"];
 
-                    listSymbols = symbolAdapter.GetDefinitions(test);
+                    //var test = defs["Program:MainProgram"].Type.Members.Find(m => m.Name == "prgTmr");
 
-                    //System.IO.File.WriteAllText("tags_out.json", JsonConvert.SerializeObject(test, Formatting.Indented) );
+                    listSymbols = symbolAdapter.GetDefinitions(defs.Values);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine("Error loading tags.json: " + ex.ToString());
+                    Console.WriteLine("Error loading tags: " + ex.ToString());
                 }
-
-                //var udt = new Value();
-                //udt.Add("type", "object");
-                //var udtProps = new Value();
-                //udtProps.Add("type", "object");
-                //var member = new Value();
-                //member.Add("$ref", "tchmi:general#/definitions/DINT");
-                //udtProps.Add("SomeDINT", member);
-                //udt.Add("properties", udtProps);
-                //definitions.Add("MyUDT", udt);
-
-                //var udtInstance = new Value();
-                //udtInstance.Add("$ref", "#/definitions/MyUDT");
-                //properties.Add("MyUdtInstance", udtInstance);
-
-                //listSymbols.Add("definitions", definitions);
-                //listSymbols.Add("properties", properties);
-
-                //var target = new Value();
-                //target.Add("type", "object");
-
-                //var targetProps = new Value();
-                //targetProps.Add("type", "object");
-
-                //var primType = new Value();
-                //primType.Add("$ref", "tchmi:general#/definitions/DINT");
-
-                //targetProps.Add("MyDINT", primType);
-                //target.Add("properties", targetProps);
-
-                //definitions.Add("Target", target);
-
-                //var targetInstance = new Value();
-                //targetInstance.Add("$ref", "#/definitions/Target");
-                //properties.Add("Logix", targetInstance);
-
-                //listSymbols.Add("definitions", definitions);
-                //listSymbols.Add("properties", properties);
-
             }
         }
 

@@ -1,50 +1,34 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json;
-using System.IO;
-using System.Threading.Tasks;
 using TcHmiSrv.Core;
-using TcHmiSrv.Core.Tools.DynamicSymbols;
-using System.Runtime.CompilerServices;
 
 namespace TcHmiLogixDriver.Logix
 {
     public class LogixSymbolAdapter
     {
-        private HashSet<string> typeCache = new HashSet<string>();
-
-        public Value GetDefinitions(TagDefinition tag)
+        // todo: implement adapter for symbol schema resolution
+        // this is a PITA
+        public Value GetDefinitions(IEnumerable<TagDefinition> tags)
         {
+            // base return value
+            var ret = new Value();
+            // type definitions
+            var definitions = new Value();
+            // properties (members / instances of definitions)
+            var properties = new Value();
+
+            // top level target/plc object
             var target = new Value();
             target.Add("type", "object");
 
+            // members of target (all symbols)
             var targetMembers = new Value();
-            targetMembers.Add("type", "object");
 
-            var ret = new Value();
-            var properties = new Value();
-            var definitions = new Value();
-
-            if (LogixTypes.IsArray(tag.Type.Code))
+            var typeCache = new HashSet<string>();
+            foreach (var tag in tags)
             {
-            }
-            else if (LogixTypes.IsUdt(tag.Type.Code))
-            {
-                var udtInstance = new Value();
-                udtInstance.Add("$ref", $"#/definitions/{tag.Type.Name}");
-                targetMembers.Add(tag.Name, udtInstance);
-
-                if (!typeCache.Contains(tag.Type.Name))
-                {
-                    GetTypeDefinition(tag, definitions);
-                }
-            }
-            else
-            {
-                var primType = new Value();
-                primType.Add("$ref", $"tchmi:general#/definitions/{tag.Type.Name}");
-                targetMembers.Add(tag.Name, primType);
+                var instance = ResolveTypeDefinition(tag, definitions, typeCache);
+                targetMembers.Add(tag.Name, instance);
             }
 
             target.Add("properties", targetMembers);
@@ -60,35 +44,65 @@ namespace TcHmiLogixDriver.Logix
             return ret;
         }
 
-        public Value GetTypeDefinition(TagDefinition tag, Value definitions)
+        // mutates definitions Value if new type def
+        private Value ResolveTypeDefinition(TagDefinition tag, Value definitions, HashSet<string> cache)
         {
-            var definition = new Value();
+            var ret = new Value();
 
             if (LogixTypes.IsArray(tag.Type.Code))
             {
+                // resolve array types / instances
+                // schema from ADS extension:
+                /*
+                "definitions": {
+                    "PLC1.ARRAY_0..4_OF-DINT": {
+                        "items": {
+                            "$ref": "tchmi:general#/definitions/DINT"
+                        },
+                        "maxItems": 5,
+                        "minItems": 5,
+                        "type": "array"
+                    },
+                    "PLC1.ARRAY_0..4_OF-ST_TestChild": {
+                        "items": {
+                            "$ref": "#/definitions/PLC1.ST_TestChild"
+                        },
+                        "maxItems": 5,
+                        "minItems": 5,
+                        "type": "array"
+                    },...
+                 */
+                throw new NotImplementedException();
             }
             else if (LogixTypes.IsUdt(tag.Type.Code))
             {
-                definition.Add("type", "object");
-                if (tag.Type.Members?.Count > 0)
+                if (!cache.Contains(tag.Type.Name))
                 {
-                    var properties = new Value();
-                    properties.Add("type", "object");
+                    // resolve UDT type / instance
+                    var udtDef = new Value();
+                    udtDef.Add("type", "object");
+                    var udtMembers = new Value();
+
                     foreach (var member in tag.Type.Members)
                     {
-                        properties.Add(member.Name, GetTypeDefinition(member, definitions));
+                        var memberDef = ResolveTypeDefinition(member, definitions, cache);
+                        udtMembers.Add(member.Name, memberDef);
                     }
-                    definition.Add("properties", properties);
+
+                    udtDef.Add("properties", udtMembers);
+                    definitions.Add(tag.Type.Name, udtDef);
+                    cache.Add(tag.Type.Name);
                 }
+
+                ret.Add("$ref", $"#/definitions/{tag.Type.Name}");
+                return ret;
             }
             else
             {
-                definition.Add("$ref", $"tchmi:general#/definitions/{tag.Type.Name}");
+                // primitive type
+                ret.Add("$ref", $"tchmi:general#/definitions/{tag.Type.Name}");
+                return ret;
             }
-
-            definitions.Add(tag.Name, definition);
-
-            return definition;
         }
     }
 }

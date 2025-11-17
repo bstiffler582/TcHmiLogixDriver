@@ -9,6 +9,7 @@ using Newtonsoft.Json.Schema;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using TcHmiLogixDriver.Logix;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
@@ -32,7 +33,7 @@ namespace TcHmiLogixDriver
         private LogixDriverConfig configuration = new LogixDriverConfig();
 
         //private LogixDriver driver = LogixDriver.Instance;
-        //private DynamicSymbolsProvider symbolProvider;
+        private DynamicSymbolsProvider symbolProvider;
         private Value listSymbols = new Value();
 
         // Called after the TwinCAT HMI server loaded the server extension.
@@ -67,18 +68,16 @@ namespace TcHmiLogixDriver
 
             if (configuration.Targets.Count > 0)
             {
-                // tag browser testing
                 try
                 {
                     var defs = System.IO.File.ReadAllText("tags.json") is string json
-                    ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
-                    : new Dictionary<string, TagDefinition>();
+                        ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
+                        : new Dictionary<string, TagDefinition>();
 
-                    var symbolAdapter = new LogixSymbolAdapter();
-
-                    //var test = defs["Program:MainProgram"].Type.Members.Find(m => m.Name == "prgTmr");
-
-                    listSymbols = symbolAdapter.GetDefinitions(defs.Values);
+                    var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
+                    
+                    symbolProvider = new DynamicSymbolsProvider();
+                    symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
                 }
                 catch (Exception ex)
                 {
@@ -96,17 +95,17 @@ namespace TcHmiLogixDriver
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
-                foreach (var command in e.Commands)
+                foreach (var command in symbolProvider.HandleCommands(e.Commands))
                 {
                     try
                     {
                         // Use the mapping to check which command is requested
                         switch (command.Mapping)
                         {
-                            case "ListSymbols":
-                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                                command.ReadValue = listSymbols;
-                                break;
+                            //case "ListSymbols":
+                            //    command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+                            //    command.ReadValue = listSymbols;
+                            //    break;
                             case "Diagnostics":
                                 command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
                                 command.ReadValue = GetDiagnostics();

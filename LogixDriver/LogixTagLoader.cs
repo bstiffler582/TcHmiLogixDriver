@@ -1,12 +1,12 @@
 ﻿using libplctag.DataTypes;
 
-namespace Logix
+namespace LogixDriver
 {
-    public class LogixDriver
+    public class LogixTagLoader
     {
         private readonly ILogixTagReader tagReader;
 
-        public LogixDriver(ILogixTagReader? tagReader = null)
+        public LogixTagLoader(ILogixTagReader? tagReader = null)
         {
             this.tagReader = tagReader ?? new LogixTagReader();
         }
@@ -21,6 +21,11 @@ namespace Logix
                 var tag = tagReader.ReadTagValue(target, tagName, (int)definition.Type.Dims);
                 return LogixTypes.ValueResolver(tag, definition);
             }
+        }
+
+        public (ushort major, ushort minor) ReadFirmwareRevision(LogixTarget target)
+        {
+            return tagReader.ReadFirmwareRevision(target);
         }
 
         public IEnumerable<TagDefinition> LoadTags(LogixTarget target)

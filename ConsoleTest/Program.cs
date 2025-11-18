@@ -1,10 +1,10 @@
-﻿using Logix;
+﻿using LogixDriver;
 using System.Text.Json;
 
 var target = new LogixTarget("Test", "192.168.68.64");
 
-var driver = new LogixDriver();
-var tagList = driver.LoadTags(target);
+var loader = new LogixTagLoader();
+var tagList = loader.LoadTags(target);
 
 target.AddTagDefinition(tagList);
 
@@ -13,5 +13,8 @@ foreach (var def in target.TagDefinitionsFlat)
 
 //File.WriteAllText("tags.json", JsonSerializer.Serialize(target.TagDefinitions, new JsonSerializerOptions() { WriteIndented = true }));
 
-var res = driver.ReadTagValue(target, "structArray");
+var res = loader.ReadTagValue(target, "structArray");
 Console.WriteLine(JsonSerializer.Serialize(res));
+
+var (major, minor) = loader.ReadFirmwareRevision(target);
+Console.WriteLine($"Firmware Revision: {major}.{minor}");

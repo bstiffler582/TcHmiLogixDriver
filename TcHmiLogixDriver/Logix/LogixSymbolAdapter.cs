@@ -2,8 +2,7 @@
 using System.Collections.Generic;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using Logix;
-using TcHmiSrv.Core.Tools.Json.Extensions;
+using LogixDriver;
 
 namespace TcHmiLogixDriver.Logix
 {

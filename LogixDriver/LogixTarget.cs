@@ -1,6 +1,6 @@
 ﻿using libplctag;
 
-namespace Logix
+namespace LogixDriver
 {
     public class LogixTarget
     {

@@ -1,7 +1,9 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
+using System.IO;
+using System.Xml.Linq;
 
-namespace Logix
+namespace LogixDriver
 {
     public interface ILogixTagReader
     {
@@ -9,6 +11,7 @@ namespace Logix
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
         Tag ReadTagValue(LogixTarget target, string path, int elements = 1);
+        (ushort Major, ushort Minor) ReadFirmwareRevision(LogixTarget target);
     }
 
     public class LogixTagReader : ILogixTagReader
@@ -73,9 +76,26 @@ namespace Logix
                 ElementCount = Math.Max(elements, 1),
                 Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
             };
-            
+
             tag.Read();
             return tag;
+        }
+
+        public (ushort Major, ushort Minor) ReadFirmwareRevision(LogixTarget target)
+        {
+            //var tag = new Tag
+            //{
+            //    Gateway = target.Gateway,
+            //    Path = target.Path,
+            //    PlcType = target.PlcType,
+            //    Protocol = target.Protocol,
+            //    Name = "@ControllerDevice",
+            //    Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
+            //};
+
+            //tag.Read();
+
+            return (0, 0);
         }
     }
 }

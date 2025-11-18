@@ -20,7 +20,7 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
-using Logix;
+using LogixDriver;
 
 namespace TcHmiLogixDriver
 {

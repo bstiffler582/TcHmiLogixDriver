@@ -1,7 +1,7 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
 
-namespace Logix
+namespace LogixDriver
 {
     public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0);
     public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);

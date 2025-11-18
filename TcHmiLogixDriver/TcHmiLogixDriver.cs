@@ -74,10 +74,25 @@ namespace TcHmiLogixDriver
                         ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
                         : new Dictionary<string, TagDefinition>();
 
-                    var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
-                    
                     symbolProvider = new DynamicSymbolsProvider();
-                    symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
+
+                    var testMapping = "MyTarget.ctrlrReadTest.arrTest"; // or use "MyTarget::MainProgram::prgReadTest::arrTest" for program-scoped case
+                    var arrTagDef = defs["ctrlrReadTest"];
+
+                    if (arrTagDef != null)
+                    {
+                        var singleAdapter = new LogixSymbolAdapter("MyTarget", new[] { arrTagDef });
+                        symbolProvider.Add("MyTarget", singleAdapter.Symbol);
+                        Console.WriteLine("Test symbol registered for: " + testMapping + " schema: " + singleAdapter.Symbol.Schema?.ToString());
+                    }
+                    else
+                    {
+                        Console.WriteLine("Test registration: could not find TagDefinition for 'arrTest' in defs");
+                    }
+
+                    //var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
+                    
+                    //symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
                 }
                 catch (Exception ex)
                 {

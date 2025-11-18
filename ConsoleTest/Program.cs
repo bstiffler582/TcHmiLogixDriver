@@ -1,9 +1,9 @@
-﻿using ConsoleTest;
+﻿using Logix;
 using System.Text.Json;
 
 var target = new LogixTarget("Test", "192.168.68.64");
 
-LogixDriver driver = new LogixDriver();
+var driver = new LogixDriver();
 var tagList = driver.LoadTags(target);
 
 target.AddTagDefinition(tagList);

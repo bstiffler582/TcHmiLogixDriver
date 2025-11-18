@@ -20,6 +20,7 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
+using Logix;
 
 namespace TcHmiLogixDriver
 {
@@ -31,10 +32,7 @@ namespace TcHmiLogixDriver
         private readonly ShutdownListener shutdownListener = new ShutdownListener();
         
         private LogixDriverConfig configuration = new LogixDriverConfig();
-
-        //private LogixDriver driver = LogixDriver.Instance;
         private DynamicSymbolsProvider symbolProvider;
-        private Value listSymbols = new Value();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -76,23 +74,9 @@ namespace TcHmiLogixDriver
 
                     symbolProvider = new DynamicSymbolsProvider();
 
-                    var testMapping = "MyTarget.ctrlrReadTest.arrTest"; // or use "MyTarget::MainProgram::prgReadTest::arrTest" for program-scoped case
-                    var arrTagDef = defs["ctrlrReadTest"];
+                    var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
 
-                    if (arrTagDef != null)
-                    {
-                        var singleAdapter = new LogixSymbolAdapter("MyTarget", new[] { arrTagDef });
-                        symbolProvider.Add("MyTarget", singleAdapter.Symbol);
-                        Console.WriteLine("Test symbol registered for: " + testMapping + " schema: " + singleAdapter.Symbol.Schema?.ToString());
-                    }
-                    else
-                    {
-                        Console.WriteLine("Test registration: could not find TagDefinition for 'arrTest' in defs");
-                    }
-
-                    //var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
-                    
-                    //symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
+                    symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
                 }
                 catch (Exception ex)
                 {
@@ -117,10 +101,6 @@ namespace TcHmiLogixDriver
                         // Use the mapping to check which command is requested
                         switch (command.Mapping)
                         {
-                            //case "ListSymbols":
-                            //    command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                            //    command.ReadValue = listSymbols;
-                            //    break;
                             case "Diagnostics":
                                 command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
                                 command.ReadValue = GetDiagnostics();

@@ -1,7 +1,7 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
 
-namespace ConsoleTest
+namespace Logix
 {
     public interface ILogixTagReader
     {

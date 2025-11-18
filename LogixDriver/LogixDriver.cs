@@ -1,6 +1,6 @@
 ﻿using libplctag.DataTypes;
 
-namespace ConsoleTest
+namespace Logix
 {
     public class LogixDriver
     {

@@ -1,6 +1,6 @@
 ﻿using libplctag;
 
-namespace ConsoleTest
+namespace Logix
 {
     public class LogixTarget
     {

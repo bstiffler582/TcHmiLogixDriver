@@ -11,7 +11,7 @@ namespace LogixDriver
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
         Tag ReadTagValue(LogixTarget target, string path, int elements = 1);
-        (ushort Major, ushort Minor) ReadFirmwareRevision(LogixTarget target);
+        string ReadControllerInfo(LogixTarget target);
     }
 
     public class LogixTagReader : ILogixTagReader
@@ -81,21 +81,38 @@ namespace LogixDriver
             return tag;
         }
 
-        public (ushort Major, ushort Minor) ReadFirmwareRevision(LogixTarget target)
+        public string ReadControllerInfo(LogixTarget target)
         {
-            //var tag = new Tag
-            //{
-            //    Gateway = target.Gateway,
-            //    Path = target.Path,
-            //    PlcType = target.PlcType,
-            //    Protocol = target.Protocol,
-            //    Name = "@ControllerDevice",
-            //    Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
-            //};
+            var tag = new Tag
+            {
+                Gateway = target.Gateway,
+                Path = target.Path,
+                PlcType = target.PlcType,
+                Protocol = target.Protocol,
+                Name = "@raw",
+                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
+            };
 
-            //tag.Read();
+            var rawPayload = new byte[] {
+                0x01, 0x02,
+                0x20, 0x01,
+                0x24, 0x01
+            };
 
-            return (0, 0);
+            tag.Initialize();
+            tag.SetSize(rawPayload.Length);
+            tag.SetBuffer(rawPayload);
+            tag.Write();
+            var buffer = tag.GetBuffer();
+
+            var offset = 10;
+            var major = buffer[offset].ToString();
+            offset += 1;
+            var minor = buffer[offset].ToString();
+            offset += 8;
+            var model = System.Text.Encoding.ASCII.GetString(buffer, offset, (buffer.Length - offset)).TrimEnd('\0');
+
+            return $"{model} v{major}.{minor}";
         }
     }
 }

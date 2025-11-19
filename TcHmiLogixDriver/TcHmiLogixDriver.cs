@@ -74,9 +74,9 @@ namespace TcHmiLogixDriver
 
                     symbolProvider = new DynamicSymbolsProvider();
 
-                    var symbolAdapter = new LogixSymbolAdapter("MyTarget", defs.Values);
+                    var symbolAdapter = new LogixSymbolAdapter("CLX", defs.Values);
 
-                    symbolProvider.Add("MyTarget", symbolAdapter.Symbol);
+                    symbolProvider.Add("CLX", symbolAdapter.Symbol);
                 }
                 catch (Exception ex)
                 {

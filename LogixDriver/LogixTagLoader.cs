@@ -23,9 +23,9 @@ namespace LogixDriver
             }
         }
 
-        public (ushort major, ushort minor) ReadFirmwareRevision(LogixTarget target)
+        public string ReadControllerInfo(LogixTarget target)
         {
-            return tagReader.ReadFirmwareRevision(target);
+            return tagReader.ReadControllerInfo(target);
         }
 
         public IEnumerable<TagDefinition> LoadTags(LogixTarget target)

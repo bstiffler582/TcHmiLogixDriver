@@ -20,7 +20,7 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
-using LogixDriver;
+using Logix;
 
 namespace TcHmiLogixDriver
 {
@@ -31,7 +31,8 @@ namespace TcHmiLogixDriver
         private readonly ConfigListener configListener = new ConfigListener();
         private readonly ShutdownListener shutdownListener = new ShutdownListener();
         
-        private LogixDriverConfig configuration = new LogixDriverConfig();
+        private LogixDriverConfig configuration;
+        private LogixDriverDiagnostics diagnostics;
         private DynamicSymbolsProvider symbolProvider;
 
         // Called after the TwinCAT HMI server loaded the server extension.
@@ -41,54 +42,74 @@ namespace TcHmiLogixDriver
             configListener.OnChange += OnConfigChange;
 
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
+            symbolProvider = new DynamicSymbolsProvider();
 
             return ErrorValue.HMI_SUCCESS;
         }
 
         private void OnConfigChange(object sender, OnChangeEventArgs e)
         {
-            if (e.Path == "targets")
+            if (e.Path != "Targets")
+                return;
+
+            try
             {
-                LoadConfiguration();
+                configuration = GetConfiguration();
+                symbolProvider = new DynamicSymbolsProvider();
+
+                foreach (var t in configuration.Targets)
+                {
+                    LoadTarget(t.Key, t.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
         }
 
-        private void LoadConfiguration()
+        private LogixDriverConfig GetConfiguration()
         {
-            var config = TcHmiApplication.AsyncHost.GetConfigValue(TcHmiApplication.Context, "targets");
+            var config = TcHmiApplication.AsyncHost.GetConfigValue(TcHmiApplication.Context, "Targets");
+            
             var targets = new Dictionary<string, TargetConfig>();
             foreach (var target in config.Keys)
             {
                 var targetConfig = TcHmiJsonSerializer.Deserialize<TargetConfig>(config[target].ToJson(), false);
                 targets.Add(target, targetConfig);
             }
-            configuration.Targets = targets;
 
-            if (configuration.Targets.Count > 0)
+            return new LogixDriverConfig
             {
-                try
-                {
-                    var defs = System.IO.File.ReadAllText("tags.json") is string json
-                        ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
-                        : new Dictionary<string, TagDefinition>();
+                Targets = targets
+            };
+        }
 
-                    symbolProvider = new DynamicSymbolsProvider();
+        private void LoadTarget(string targetName, TargetConfig config)
+        {
+            //var defs = System.IO.File.ReadAllText("tags.json") is string json
+            //    ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
+            //    : new Dictionary<string, TagDefinition>();
 
-                    var symbolAdapter = new LogixSymbolAdapter("CLX", defs.Values);
+            var target = new LogixTarget(targetName, config.targetAddress, config.targetSlot);
+            var driver = new LogixDriver();
 
-                    symbolProvider.Add("CLX", symbolAdapter.Symbol);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Error loading tags: " + ex.ToString());
-                }
+            if (config.tagBrowser)
+            {
+                driver.LoadTags(target);
             }
+            symbolProvider.Add(target.Name, new LogixSymbol(target, driver));
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
         private void OnRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
             var commands = e.Commands;
+
+            if (commands.Count > 1 || !commands.Any(c => c.Name.Contains("ListSymbols")))
+            {
+                ;
+            }
 
             try
             {
@@ -128,7 +149,7 @@ namespace TcHmiLogixDriver
         private Value GetDiagnostics()
         {
             var diag = new LogixDriverDiagnostics();
-            diag.Targets.Add("Test", new TargetDiagnostics(connectionState: "CONNECTED"));
+            diag.Targets.Add("Test", new TargetDiagnostics(connectionState: "CONNECTED", model: "", firmware: ""));
             return TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diag));
         }
     }

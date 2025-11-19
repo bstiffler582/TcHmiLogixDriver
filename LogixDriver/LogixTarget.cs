@@ -1,6 +1,6 @@
 ﻿using libplctag;
 
-namespace LogixDriver
+namespace Logix
 {
     public class LogixTarget
     {
@@ -14,8 +14,8 @@ namespace LogixDriver
         // map of tag definitions
         private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
         private readonly Dictionary<string, TagDefinition> tagDefinitionsFlat = new();
-        public IDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
-        public IDictionary<string, TagDefinition> TagDefinitionsFlat => tagDefinitionsFlat;
+        public IReadOnlyDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
+        public IReadOnlyDictionary<string, TagDefinition> TagDefinitionsFlat => tagDefinitionsFlat;
 
         // map of tags
         private readonly Dictionary<string, Tag> tags = new();
@@ -41,21 +41,17 @@ namespace LogixDriver
 
         public void AddTagDefinition(TagDefinition tag)
         {
-            tagDefinitions.Add(tag.Name, tag);
+            tagDefinitions.TryAdd(tag.Name, tag);
+
             var flattened = Flatten(tag);
             foreach (var t in flattened)
                 tagDefinitionsFlat.TryAdd(t.Path, t.TagDef);
         }
 
-        public void AddTagDefinition(IEnumerable<TagDefinition> tagList)
+        public void AddTagDefinition(IEnumerable<TagDefinition> tags)
         {
-            foreach (var tag in tagList)
-            {
-                tagDefinitions.Add(tag.Name, tag);
-                var flattened = Flatten(tag).ToList();
-                foreach (var t in flattened)
-                    tagDefinitionsFlat.TryAdd(t.Path, t.TagDef);
-            }
+            foreach (var tag in tags)
+                AddTagDefinition(tag);
         }
 
         private static IEnumerable<(string Path, TagDefinition TagDef)> Flatten(TagDefinition node, string parentPath = "")

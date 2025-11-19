@@ -39,10 +39,20 @@
                 "connectionState": {
                   "propertyOrder": 1,
                   "type": "string"
+                },
+                "model": {
+                  "propertyOrder": 2,
+                  "type": "string"
+                },
+                "firmware": {
+                  "propertyOrder": 3,
+                  "type": "string"
                 }
               },
               "required": [
-                "connectionState"
+                "connectionState",
+                "model",
+                "firmware"
               ]
             }
           }

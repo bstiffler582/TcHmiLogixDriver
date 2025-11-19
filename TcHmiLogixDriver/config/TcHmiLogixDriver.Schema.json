@@ -19,13 +19,18 @@
           "type": "integer",
           "description": "Connection timeout (ms)",
           "default": 1000
+        },
+        "tagBrowser": {
+          "type": "boolean",
+          "description": "Use tag browser",
+          "default": false
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout" ]
+      "required": [ "targetAddress", "targetSlot", "timeout", "tagBrowser" ]
     }
   },
   "properties": {
-    "targets": {
+    "Targets": {
       "configDescription": "Logix targets",
       "type": "object",
       "additionalProperties": {

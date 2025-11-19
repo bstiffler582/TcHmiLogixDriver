@@ -1,50 +1,39 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using LogixDriver;
+using Logix;
 
 namespace TcHmiLogixDriver.Logix
 {
-    
-    public class LogixSymbolAdapter
+    public static class LogixSchemaAdapter
     {
-        public readonly string TargetName;
-        public readonly IEnumerable<TagDefinition> Tags;
-        public readonly Symbol Symbol;
-
-        public LogixSymbolAdapter(string target, IEnumerable<TagDefinition> tags)
-        {
-            TargetName = target;
-            Tags = tags;
-            Symbol = new LogixSymbol(this);
-        }
-
-        public static JsonSchemaValue BuildSymbolSchema(LogixSymbolAdapter adapter)
+        public static JsonSchemaValue BuildSymbolSchema(LogixTarget target)
         {
             var typeCache = new HashSet<string>();
 
             var definitions = new Value();
             var properties = new Value();
-            var root = new Value();
 
-            foreach (var tag in adapter.Tags)
+            foreach (var tag in target.TagDefinitions.Values)
             {
                 if (tag.Name.StartsWith("__DEFVAL_"))
                     continue;
 
-                var instance = ResolveTypeDefinition(tag, definitions, typeCache, adapter.TargetName);
+                var instance = ResolveTypeDefinitionSchema(tag, definitions, typeCache, target.Name);
                 properties.Add(tag.Name, instance);
             }
 
+            var root = new Value();
             root.Add("definitions", definitions);
             root.Add("properties", properties);
             root.Add("type", "object");
 
-            return new JsonSchemaValue(root, true);
+            var extractDefinitions = (target.TagDefinitions.Count > 0);
+
+            return new JsonSchemaValue(root, extractDefinitions);
         }
 
-        private static Value ResolveTypeDefinition(TagDefinition tag, Value definitions, HashSet<string> cache, string targetName)
+        private static Value ResolveTypeDefinitionSchema(TagDefinition tag, Value definitions, HashSet<string> cache, string targetName)
         {
             if (LogixTypes.IsArray(tag.Type.Code))
             {
@@ -59,7 +48,7 @@ namespace TcHmiLogixDriver.Logix
                 // account for if array base type is unresolved udt
                 if (LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) && !cache.Contains(itemTypeName))
                 {
-                    ResolveTypeDefinition(tag.Type.Members[0], definitions, cache, targetName);
+                    ResolveTypeDefinitionSchema(tag.Type.Members[0], definitions, cache, targetName);
                 }
 
                 // array instance definition name
@@ -108,7 +97,7 @@ namespace TcHmiLogixDriver.Logix
                             if (member.Name.StartsWith("ZZZZZZZZZZ"))
                                 continue;
 
-                            var memberDef = ResolveTypeDefinition(member, definitions, cache, targetName);
+                            var memberDef = ResolveTypeDefinitionSchema(member, definitions, cache, targetName);
                             udtMembers.Add(member.Name, memberDef);
                         }
                     }

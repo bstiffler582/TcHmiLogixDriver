@@ -46,9 +46,10 @@
 	<ItemGroup>
 		<!-- Exclude runtime assets to not copy files from dependent NuGet packages to the output directory. -->
 		<!-- Declare all assets private to not make a created NuGet package dependent on them. -->
-		<PackageReference Include="Beckhoff.TwinCAT.HMI.TcHmiSrvExtNet.Core.SDK" Version="3.*">
+		<PackageReference Include="Beckhoff.TwinCAT.HMI.TcHmiSrvExtNet.Core.SDK" Version="3.0.7066">
 			<ExcludeAssets>runtime</ExcludeAssets>
 			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="libplctag" Version="1.5.2" />
 	</ItemGroup>

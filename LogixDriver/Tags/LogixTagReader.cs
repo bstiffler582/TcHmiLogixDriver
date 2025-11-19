@@ -1,9 +1,8 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
-using System.IO;
-using System.Xml.Linq;
+using Logix;
 
-namespace LogixDriver
+namespace Logix.Tags
 {
     public interface ILogixTagReader
     {
@@ -110,7 +109,7 @@ namespace LogixDriver
             offset += 1;
             var minor = buffer[offset].ToString();
             offset += 8;
-            var model = System.Text.Encoding.ASCII.GetString(buffer, offset, (buffer.Length - offset)).TrimEnd('\0');
+            var model = System.Text.Encoding.ASCII.GetString(buffer, offset, buffer.Length - offset).TrimEnd('\0');
 
             return $"{model} v{major}.{minor}";
         }

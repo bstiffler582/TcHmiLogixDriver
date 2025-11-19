@@ -1,7 +1,7 @@
 ﻿using libplctag;
 using libplctag.DataTypes;
 
-namespace LogixDriver
+namespace Logix
 {
     public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0);
     public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
@@ -52,15 +52,31 @@ namespace LogixDriver
 
         public static TypeDefinition TypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
         {
-            Func<TagInfo, TypeDefinition> callback = (TagInfo tagInfo) => TypeResolver(tagInfo, typeCache, readUdtInfo);
-
             if (IsArray(tagInfo.Type))
             {
-                return ArrayTypeResolver(tagInfo, callback);
+                var baseTypeCode = GetArrayBaseType(tagInfo.Type);
+                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode }, typeCache, readUdtInfo);
+                var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
+                    .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
+                    .ToList();
+                return new TypeDefinition(tagInfo.Type, tagInfo.Dimensions[0] * baseType.Length, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
             }
             else if (IsUdt(tagInfo.Type))
             {
-                return UdtTypeResolver(tagInfo, typeCache, readUdtInfo, callback);
+                var udtId = GetUdtId(tagInfo.Type);
+                if (typeCache.TryGetValue(udtId, out var cached))
+                    return cached;
+
+                var udtInfo = readUdtInfo(udtId);
+                var members = udtInfo.Fields
+                    .Select(m => new TagDefinition(m.Name, TypeResolver(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }, typeCache, readUdtInfo), m.Offset))
+                    .ToList();
+
+                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, tagInfo.Dimensions[0], members);
+
+                typeCache.Add(udtId, udtDef);
+
+                return udtDef;
             }
             else
             {
@@ -69,65 +85,7 @@ namespace LogixDriver
             }
         }
 
-        private static TypeDefinition ArrayTypeResolver(TagInfo tagInfo, Func<TagInfo, TypeDefinition> resolveType)
-        {
-            var baseTypeCode = GetArrayBaseType(tagInfo.Type);
-            var baseType = resolveType(new TagInfo { Type = baseTypeCode });
-            var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
-                .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
-                .ToList();
-            return new TypeDefinition(tagInfo.Type, tagInfo.Dimensions[0] * baseType.Length, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
-        }
-
-        private static TypeDefinition UdtTypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo, Func<TagInfo, TypeDefinition> resolveType)
-        {
-            var udtId = GetUdtId(tagInfo.Type);
-            if (typeCache.TryGetValue(udtId, out var cached))
-                return cached;
-
-            var udtInfo = readUdtInfo(udtId);
-            var members = udtInfo.Fields
-                .Select(m => new TagDefinition(m.Name, resolveType(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }), m.Offset))
-                .ToList();
-
-            var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, tagInfo.Dimensions[0], members);
-
-            typeCache.Add(udtId, udtDef);
-
-            return udtDef;
-        }
-
-        public static object ValueResolver(Tag tag, TagDefinition definition, int offset = 0)
-        {
-            if (IsArray(definition.Type.Code))
-            {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
-                    return 0;
-
-                var ret = new List<object>();
-                foreach (var m in definition.Type.Members)
-                    ret.Add(ValueResolver(tag, m, offset + (int)m.Offset));
-
-                return ret;
-            }
-            else if (IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
-            {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
-                    return 0;
-
-                var ret = new Dictionary<string, object>();
-                foreach (var m in definition.Type.Members)
-                    ret[m.Name] = ValueResolver(tag, m, offset + (int)m.Offset);
-
-                return ret;
-            }
-            else
-            {
-                return PrimitiveValueResolver(tag, definition.Type.Code, offset);
-            }
-        }
-
-        private static object PrimitiveValueResolver(Tag tag, ushort typeCode, int offset = 0)
+        public static object PrimitiveValueResolver(Tag tag, ushort typeCode, int offset = 0)
         {
             return (Code)(typeCode) switch
             {

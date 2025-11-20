@@ -21,6 +21,8 @@ namespace Logix
             return tags;
         }
 
+        // TODO: something with this so we can specify type param here
+        // TODO: cache R/W tags so they don't get GC'd
         public object ReadTagValue(LogixTarget target, string tagName)
         {
             var definition = target.TryGetTagDefinition(tagName);

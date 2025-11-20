@@ -69,7 +69,9 @@ namespace Logix
 
                 var udtInfo = readUdtInfo(udtId);
                 var members = udtInfo.Fields
-                    .Select(m => new TagDefinition(m.Name, TypeResolver(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }, typeCache, readUdtInfo), m.Offset))
+                    .Select(m => 
+                        new TagDefinition(m.Name, TypeResolver(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }, typeCache, readUdtInfo), m.Offset)
+                    )
                     .ToList();
 
                 var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, tagInfo.Dimensions[0], members);

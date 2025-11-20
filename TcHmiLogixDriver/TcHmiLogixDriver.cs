@@ -96,6 +96,7 @@ namespace TcHmiLogixDriver
 
             if (config.tagBrowser)
             {
+                // TODO: cache tags/defs in config so it works without browsing?
                 driver.LoadTags(target);
             }
             symbolProvider.Add(target.Name, new LogixSymbol(target, driver));
@@ -142,7 +143,17 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
-                throw new TcHmiException(ex.ToString(), ErrorValue.HMI_E_EXTENSION);
+                var command = e.Commands.FirstOrDefault();
+                if (command != null)
+                {
+                    command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
+                    command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
+                }
+                else
+                {
+                    throw new TcHmiException("u r cooked: " + ex.ToString(), ErrorValue.HMI_E_EXTENSION);
+                }
+                
             }
         }
 

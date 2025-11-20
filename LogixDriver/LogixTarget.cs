@@ -17,9 +17,6 @@ namespace Logix
         public IReadOnlyDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
         public IReadOnlyDictionary<string, TagDefinition> TagDefinitionsFlat => tagDefinitionsFlat;
 
-        // map of tags
-        private readonly Dictionary<string, Tag> tags = new();
-
         public LogixTarget(
             string Name, 
             string Gateway, 
@@ -72,7 +69,6 @@ namespace Logix
                 foreach (var child in node.Type.Members.SelectMany(c => Flatten(c, fullPath)))
                     yield return child;
             }
-            
         }
 
         //public void Debug()

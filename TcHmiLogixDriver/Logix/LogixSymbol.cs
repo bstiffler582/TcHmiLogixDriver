@@ -2,10 +2,9 @@ using Logix;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using TcHmiSrv.Core.Tools.Json.Newtonsoft;
-using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 
 namespace TcHmiLogixDriver.Logix
 {
@@ -18,28 +17,43 @@ namespace TcHmiLogixDriver.Logix
         {
             this.target = target;
             this.driver = driver;
+            driver.ValueResolver = new LogixSymbolValueResolver();
         }
 
         protected override Value Read(Queue<string> elements, Context context)
         {
-            var val = driver.ReadTagValue(target, string.Join(".", elements));
+            TagDefinition def;
+            StringBuilder path = new StringBuilder();
 
-            Type type = val.GetType();
-            if (type.IsPrimitive)
+            if (elements.Count > 1)
             {
+                target.TagDefinitions.TryGetValue(elements.Dequeue(), out def);
+                path.Append(def.Name);
                 while (elements.Count > 0)
-                    elements.Dequeue();
+                {
+                    def = def.Type.Members.Find(m => m.Name == elements.Peek());
 
-                return (int)val;
+                    if (int.TryParse(def.Name, out var idx))
+                        path.Append("[").Append(def.Name).Append("]");
+                    else
+                        path.Append(".").Append(def.Name);
+
+                    elements.Dequeue();
+                }
+            }
+            else
+            {
+                target.TagDefinitions.TryGetValue(elements.Dequeue(), out def);
+                path.Append(def.Name);
             }
 
-            var v = TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter,
-                JsonConvert.SerializeObject(val));
-
-            var b = new Value();
-            b.Add("ctrlrReadTest", v);
-            
-            return b;
+            if (def == null)
+                throw new Exception("Tag not found");
+            else
+            {
+                var val = driver.ReadTagValue(target, path.ToString()) as Value;
+                return val;
+            }
         }
 
         protected override Value Write(Queue<string> elements, Value value, Context context)

@@ -4,11 +4,13 @@
 // </copyright>
 //-----------------------------------------------------------------------
 
+using Logix;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Schema;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using TcHmiLogixDriver.Logix;
 using TcHmiSrv.Core;
@@ -20,7 +22,7 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
-using Logix;
+using TcHmiSrv.Core.Tools.Resolving.Handlers;
 
 namespace TcHmiLogixDriver
 {
@@ -34,6 +36,9 @@ namespace TcHmiLogixDriver
         private LogixDriverConfig configuration;
         private LogixDriverDiagnostics diagnostics;
         private DynamicSymbolsProvider symbolProvider;
+
+        private HashSet<string> requestedSchemas = new HashSet<string>();
+        private MappingTree mappingTree = new MappingTree();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -99,7 +104,8 @@ namespace TcHmiLogixDriver
                 // TODO: cache tags/defs in config so it works without browsing?
                 driver.LoadTags(target);
             }
-            symbolProvider.Add(target.Name, new LogixSymbol(target, driver));
+
+            symbolProvider.Add(target.Name, new LogixSymbol(target, driver, mappingTree));
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
@@ -107,14 +113,21 @@ namespace TcHmiLogixDriver
         {
             var commands = e.Commands;
 
-            if (commands.Count > 1 || !commands.Any(c => c.Name.Contains("ListSymbols")))
-            {
-                ;
-            }
-
             try
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+
+                // store requested schema paths
+                if (commands.First().Name == "TcHmiLogixDriver.GetSchema")
+                {
+                    var mappingCmd = commands.First();
+                    if (!requestedSchemas.Contains(mappingCmd.WriteValue))
+                    {
+                        requestedSchemas.Add(mappingCmd.WriteValue);
+                        var path = TcHmiApplication.SplitSymbolPath(mappingCmd.WriteValue, StringSplitOptions.RemoveEmptyEntries);
+                        mappingTree.AddPath(path);
+                    }
+                }
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands))
                 {

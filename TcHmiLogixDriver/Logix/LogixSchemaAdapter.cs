@@ -1,7 +1,8 @@
-﻿using System.Collections.Generic;
+﻿using Logix;
+using System.Collections.Generic;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using Logix;
+using TcHmiSrv.Core.Tools.Resolving.Handlers;
 
 namespace TcHmiLogixDriver.Logix
 {

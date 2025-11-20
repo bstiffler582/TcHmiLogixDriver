@@ -1,6 +1,7 @@
 Packages/
 TestHmiProject/
 TwinCAT Project/
+json-schema.org/
 .vs/
 .engineering_servers/
 *.~u

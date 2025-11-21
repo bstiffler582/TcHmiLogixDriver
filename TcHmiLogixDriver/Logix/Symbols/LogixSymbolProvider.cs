@@ -5,7 +5,7 @@ using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 using TcHmiSrv.Core.Tools.Resolving.Handlers;
 
-namespace TcHmiLogixDriver
+namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbolProvider : DynamicSymbolsProvider
     {

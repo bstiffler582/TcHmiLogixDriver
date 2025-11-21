@@ -1,43 +1,61 @@
 ﻿using Logix.Tags;
+using libplctag;
 
 namespace Logix
 {
-    public class LogixDriver
+    public class LogixDriver : IDisposable
     {
-        private ILogixTagReader tagReader = new LogixTagReader();
-        private ILogixTagWriter tagWriter = new LogixTagWriter();
-        private ILogixTagLoader tagLoader = new LogixTagLoader();
-        public ILogixValueResolver ValueResolver { get; set; }
+        public ILogixTagReader TagReader { get; set; } = new LogixTagReader();
+        public ILogixTagWriter TagWriter { get; set; } = new LogixTagWriter();
+        public ILogixTagLoader TagLoader { get; set; } = new LogixTagLoader();
+        public ILogixValueResolver ValueResolver { get; set; } = new LogixDefaultValueResolver();
 
-        public LogixDriver()
+        public readonly LogixTarget Target;
+
+        private Dictionary<string, Tag> tagCache = new Dictionary<string, Tag>();
+
+        public LogixDriver(LogixTarget target)
         {
-            ValueResolver = new LogixDefaultValueResolver();
+            Target = target;
         }
 
-        public IEnumerable<TagDefinition> LoadTags(LogixTarget target)
+        public IEnumerable<TagDefinition> LoadTags()
         {
-            var tags = tagLoader.LoadTags(target, tagReader);
-            target.AddTagDefinition(tags);
+            var tags = TagLoader.LoadTags(Target, TagReader);
+            Target.AddTagDefinition(tags);
             return tags;
         }
 
-        // TODO: something with this so we can specify type param here
-        // TODO: cache R/W tags so they don't get GC'd
-        public object ReadTagValue(LogixTarget target, string tagName)
+        public object ReadTagValue(string tagName)
         {
-            var definition = target.TryGetTagDefinition(tagName);
+            var definition = Target.TryGetTagDefinition(tagName);
             if (definition is null)
                 throw new Exception("Tag not found");
             else
             {
-                var tag = tagReader.ReadTagValue(target, tagName, (int)definition.Type.Dims);
+                if (!tagCache.TryGetValue(tagName, out var tag))
+                {
+                    tag = TagReader.ReadTagValue(Target, tagName, (int)definition.Type.Dims);
+                    tagCache.Add(tagName, tag);
+                } 
+                else
+                {
+                    tag.Read();
+                }
+                
                 return ValueResolver.ResolveValue(tag, definition);
             }
         }
 
-        public string ReadControllerInfo(LogixTarget target)
+        public string ReadControllerInfo()
         {
-            return tagReader.ReadControllerInfo(target);
+            return TagReader.ReadControllerInfo(Target);
+        }
+
+        public void Dispose()
+        {
+            foreach (var tag in tagCache.Values)
+                tag.Dispose();
         }
     }
 }

@@ -5,14 +5,12 @@
 //-----------------------------------------------------------------------
 
 using Logix;
+using TcHmiLogixDriver.Logix;
+using TcHmiLogixDriver.Logix.Symbols;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Schema;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using TcHmiLogixDriver.Logix;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
 using TcHmiSrv.Core.Listeners;
@@ -22,7 +20,6 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
-using TcHmiSrv.Core.Tools.Resolving.Handlers;
 
 namespace TcHmiLogixDriver
 {
@@ -38,7 +35,7 @@ namespace TcHmiLogixDriver
         private DynamicSymbolsProvider symbolProvider;
 
         private HashSet<string> requestedSchemas = new HashSet<string>();
-        private MappingTree mappingTree = new MappingTree();
+        private Dictionary<string, LogixDriver> drivers = new Dictionary<string, LogixDriver>();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -61,10 +58,12 @@ namespace TcHmiLogixDriver
             {
                 configuration = GetConfiguration();
                 symbolProvider = new DynamicSymbolsProvider();
+                drivers = new Dictionary<string, LogixDriver>();
 
                 foreach (var t in configuration.Targets)
                 {
-                    LoadTarget(t.Key, t.Value);
+                    var driver = LoadTarget(t.Key, t.Value);
+                    drivers.Add(t.Key, driver);
                 }
             }
             catch (Exception ex)
@@ -90,22 +89,29 @@ namespace TcHmiLogixDriver
             };
         }
 
-        private void LoadTarget(string targetName, TargetConfig config)
+        private LogixDriver LoadTarget(string targetName, TargetConfig config)
         {
-            //var defs = System.IO.File.ReadAllText("tags.json") is string json
-            //    ? JsonConvert.DeserializeObject<Dictionary<string, TagDefinition>>(json)
-            //    : new Dictionary<string, TagDefinition>();
-
             var target = new LogixTarget(targetName, config.targetAddress, config.targetSlot);
-            var driver = new LogixDriver();
+            var driver = new LogixDriver(target);
 
+            var cacheConfigPath = $"Targets::{target.Name}::tagDefinitionCache";
             if (config.tagBrowser)
             {
-                // TODO: cache tags/defs in config so it works without browsing?
-                driver.LoadTags(target);
+                var tags = driver.LoadTags();
+
+                // cache tag defintions in config for offline use
+                var json = JsonConvert.SerializeObject(tags);
+                TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, $"Targets::{target.Name}::tagDefinitionCache", json);
+            }
+            else
+            {
+                // load tag definitions from cache
+                var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
+                target.AddTagDefinition(tags);
             }
 
-            symbolProvider.Add(target.Name, new LogixSymbol(target, driver, mappingTree));
+            symbolProvider.Add(target.Name, new LogixSymbol(driver, requestedSchemas));
+            return driver;
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
@@ -117,17 +123,9 @@ namespace TcHmiLogixDriver
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
-                // store requested schema paths
+                // store requested schema paths - maybe there is a better way to retrieved mapped symbols?
                 if (commands.First().Name == "TcHmiLogixDriver.GetSchema")
-                {
-                    var mappingCmd = commands.First();
-                    if (!requestedSchemas.Contains(mappingCmd.WriteValue))
-                    {
-                        requestedSchemas.Add(mappingCmd.WriteValue);
-                        var path = TcHmiApplication.SplitSymbolPath(mappingCmd.WriteValue, StringSplitOptions.RemoveEmptyEntries);
-                        mappingTree.AddPath(path);
-                    }
-                }
+                    requestedSchemas.Add(commands.First().WriteValue);
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands))
                 {
@@ -170,6 +168,7 @@ namespace TcHmiLogixDriver
             }
         }
 
+        // TODO: implement
         private Value GetDiagnostics()
         {
             var diag = new LogixDriverDiagnostics();

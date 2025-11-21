@@ -22,8 +22,14 @@
         },
         "tagBrowser": {
           "type": "boolean",
-          "description": "Use tag browser",
+          "description": "Use online tag browser",
           "default": false
+        },
+        "tagDefinitionCache": {
+          "type": "string",
+          "description": "Cached tag definition data for offline use",
+          "default": "",
+          "visibility": "AlwaysHide"
         }
       },
       "required": [ "targetAddress", "targetSlot", "timeout", "tagBrowser" ]

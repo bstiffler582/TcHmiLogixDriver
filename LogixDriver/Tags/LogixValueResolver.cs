@@ -17,7 +17,7 @@ namespace Logix.Tags
         public Type ValueType => typeof(T);
         public abstract T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
         object ILogixValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
-            => ResolveValue(tag, definition, offset);
+            => ResolveValue(tag, definition, offset) ?? default!;
     }
 
     public class LogixDefaultValueResolver : LogixValueResolverBase<object>

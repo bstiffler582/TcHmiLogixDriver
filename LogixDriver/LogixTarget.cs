@@ -70,13 +70,5 @@ namespace Logix
                     yield return child;
             }
         }
-
-        //public void Debug()
-        //{
-        //    var tags = JsonSerializer.Serialize(tagMap);
-        //    File.WriteAllText("tags.json", tags);
-        //    var udts = JsonSerializer.Serialize(udtIdMap);
-        //    File.WriteAllText("udts.json", udts);
-        //}
     }
 }

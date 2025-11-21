@@ -2,25 +2,24 @@
 using System.Collections.Generic;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using TcHmiSrv.Core.Tools.Resolving.Handlers;
 
-namespace TcHmiLogixDriver.Logix
+namespace TcHmiLogixDriver.Logix.Symbols
 {
     public static class LogixSchemaAdapter
     {
-        public static JsonSchemaValue BuildSymbolSchema(LogixTarget target)
+        public static JsonSchemaValue BuildSymbolSchema(LogixDriver driver)
         {
             var typeCache = new HashSet<string>();
 
             var definitions = new Value();
             var properties = new Value();
 
-            foreach (var tag in target.TagDefinitions.Values)
+            foreach (var tag in driver.Target.TagDefinitions.Values)
             {
                 if (tag.Name.StartsWith("__DEFVAL_"))
                     continue;
 
-                var instance = ResolveTypeDefinitionSchema(tag, definitions, typeCache, target.Name);
+                var instance = ResolveTypeDefinitionSchema(tag, definitions, typeCache, driver.Target.Name);
                 properties.Add(tag.Name, instance);
             }
 
@@ -29,7 +28,7 @@ namespace TcHmiLogixDriver.Logix
             root.Add("properties", properties);
             root.Add("type", "object");
 
-            var extractDefinitions = (target.TagDefinitions.Count > 0);
+            var extractDefinitions = driver.Target.TagDefinitions.Count > 0;
 
             return new JsonSchemaValue(root, extractDefinitions);
         }
@@ -42,9 +41,9 @@ namespace TcHmiLogixDriver.Logix
                 var baseTypeName = tag.Type.Members[0].Type.Name;
 
                 // primitive vs UDT type name resolution
-                var itemTypeName = (LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) ?
+                var itemTypeName = LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) ?
                     $"#/definitions/{targetName}.{baseTypeName}" :
-                    $"tchmi:general#/definitions/{baseTypeName}");
+                    $"tchmi:general#/definitions/{baseTypeName}";
 
                 // account for if array base type is unresolved udt
                 if (LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) && !cache.Contains(itemTypeName))

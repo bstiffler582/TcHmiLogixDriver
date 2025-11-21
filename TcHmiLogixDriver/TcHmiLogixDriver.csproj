@@ -13,9 +13,9 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Company>BrandonSt</Company>
-		<Description>-.-</Description>
-		<Copyright>Copyright © BrandonSt 2025</Copyright>
+		<Company>Beckhoff USA Community</Company>
+		<Description>A CIP driver for TwinCAT HMI</Description>
+		<Copyright></Copyright>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -58,8 +58,35 @@
 	  <ProjectReference Include="..\LogixDriver\LogixDriver.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Properties\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Include="..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
 	<PropertyGroup>
 		<ProjectGuid>fcc09cd0-3b69-4915-a4b4-d02e5d73f4f5</ProjectGuid>
+		<Title>TwinCAT HMI Logix Driver</Title>
+		<PackageProjectUrl>https://github.com/bstiffler582/TcHmiLogixDriver</PackageProjectUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
+		<AssemblyVersion>0.0.1</AssemblyVersion>
+		<Version>$(AssemblyVersion)</Version>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+	  <IsPublishable>False</IsPublishable>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+	  <IsPublishable>False</IsPublishable>
 	</PropertyGroup>
 
 </Project>

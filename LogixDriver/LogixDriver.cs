@@ -14,6 +14,11 @@ namespace Logix
 
         private Dictionary<string, Tag> tagCache = new Dictionary<string, Tag>();
 
+        // implement polling strategy:
+        // queue requests as they come in, hierarchical ordering
+        // handle if multiple primitives of a struct are requested
+
+
         public LogixDriver(LogixTarget target)
         {
             Target = target;

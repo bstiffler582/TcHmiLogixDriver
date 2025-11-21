@@ -21,6 +21,7 @@ using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
 using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
+using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 
 namespace TcHmiLogixDriver
 {
@@ -30,6 +31,7 @@ namespace TcHmiLogixDriver
         private readonly RequestListener requestListener = new();
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
+        private readonly SubscriptionListener subscriptionListener = new();
         
         private LogixDriverConfig configuration;
         private DynamicSymbolsProvider symbolProvider;
@@ -38,15 +40,18 @@ namespace TcHmiLogixDriver
         private Dictionary<string, LogixDriver> drivers;
         private Value diagnosticsValue;
 
+        private readonly SubscriptionManager subscriptionManager = new();
+
         // debug
-        private Queue<string> requestExceptionLog = new Queue<string>();
+        private Queue<string> requestExceptionLog = new();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
         {
-            requestListener.OnRequest += OnRequest;
-            configListener.OnChange += OnConfigChange;
-            shutdownListener.OnShutdown += OnShutDown;
+            requestListener.OnRequest += onRequest;
+            configListener.OnChange += onConfigChange;
+            shutdownListener.OnShutdown += onShutDown;
+            subscriptionListener.OnUnsubscribe += onUnsubscribe;
 
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
             symbolProvider = new DynamicSymbolsProvider();
@@ -54,12 +59,24 @@ namespace TcHmiLogixDriver
             return ErrorValue.HMI_SUCCESS;
         }
 
-        private void OnShutDown(object sender, OnShutdownEventArgs e)
+        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
+        {
+            subscriptionManager.RemoveSubscription(e.Context.SubscriptionId);
+            
+            // update drivers
+            foreach (var driver in drivers)
+            {
+                // compare what's requested with what's mapped (again)
+                // tell driver to subscribe longest prefix of requested symbols
+            }
+        }
+
+        private void onShutDown(object sender, OnShutdownEventArgs e)
         {
             System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
         }
 
-        private void OnConfigChange(object sender, OnChangeEventArgs e)
+        private void onConfigChange(object sender, OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
@@ -133,7 +150,7 @@ namespace TcHmiLogixDriver
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
-        private void OnRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
+        private void onRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
             var commands = e.Commands;
 
@@ -145,7 +162,13 @@ namespace TcHmiLogixDriver
                 if (commands.First().Name == "TcHmiLogixDriver.GetSchema")
                     requestedSchemas.Add(commands.First().WriteValue);
 
-                foreach (var command in symbolProvider.HandleCommands(e.Commands))
+                // default symbols (ListSymbols, GetSchema) are requested with id 0
+                if (e.Context.SubscriptionId != 0)
+                {
+                    // TODO: add subscriptions to manager
+                }
+
+                foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
                 {
                     try
                     {
@@ -214,7 +237,8 @@ namespace TcHmiLogixDriver
                 diagnostics.Targets.Add(driver.Target.Name, diag);
             }
 
-            return TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diagnostics));
+            diagnosticsValue = TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diagnostics));
+            return diagnosticsValue;
         }
     }
 }

@@ -30,26 +30,32 @@ namespace Logix
         {
             var definition = Target.TryGetTagDefinition(tagName);
             if (definition is null)
-                throw new Exception("Tag not found");
+                throw new Exception("Tag definition not found.");
             else
             {
                 if (!tagCache.TryGetValue(tagName, out var tag))
                 {
                     tag = TagReader.ReadTagValue(Target, tagName, (int)definition.Type.Dims);
                     tagCache.Add(tagName, tag);
-                } 
+                }
                 else
                 {
                     tag.Read();
                 }
-                
+
                 return ValueResolver.ResolveValue(tag, definition);
             }
         }
 
         public string ReadControllerInfo()
         {
-            return TagReader.ReadControllerInfo(Target);
+            string info = string.Empty;
+            try
+            {
+                info = TagReader.ReadControllerInfo(Target);
+            }
+            catch { }
+            return info;
         }
 
         public void Dispose()

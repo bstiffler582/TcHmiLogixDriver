@@ -36,7 +36,7 @@
 		https://learn.microsoft.com/en-us/nuget/create-packages/creating-a-package-msbuild
 	-->
 	<PropertyGroup>
-		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild>False</GeneratePackageOnBuild>
 	</PropertyGroup>
 
 	<PropertyGroup>

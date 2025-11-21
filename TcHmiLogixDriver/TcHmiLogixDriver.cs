@@ -20,28 +20,33 @@ using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
+using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
 
 namespace TcHmiLogixDriver
 {
     // Represents the default type of the TwinCAT HMI server extension.
     public class TcHmiLogixDriver : IServerExtension
     {
-        private readonly RequestListener requestListener = new RequestListener();
-        private readonly ConfigListener configListener = new ConfigListener();
-        private readonly ShutdownListener shutdownListener = new ShutdownListener();
+        private readonly RequestListener requestListener = new();
+        private readonly ConfigListener configListener = new();
+        private readonly ShutdownListener shutdownListener = new();
         
         private LogixDriverConfig configuration;
-        private LogixDriverDiagnostics diagnostics;
         private DynamicSymbolsProvider symbolProvider;
 
-        private HashSet<string> requestedSchemas = new HashSet<string>();
-        private Dictionary<string, LogixDriver> drivers = new Dictionary<string, LogixDriver>();
+        private HashSet<string> requestedSchemas = new();
+        private Dictionary<string, LogixDriver> drivers;
+        private Value diagnosticsValue;
+
+        // debug
+        private Queue<string> requestExceptionLog = new Queue<string>();
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
         {
             requestListener.OnRequest += OnRequest;
             configListener.OnChange += OnConfigChange;
+            shutdownListener.OnShutdown += OnShutDown;
 
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
             symbolProvider = new DynamicSymbolsProvider();
@@ -49,10 +54,17 @@ namespace TcHmiLogixDriver
             return ErrorValue.HMI_SUCCESS;
         }
 
+        private void OnShutDown(object sender, OnShutdownEventArgs e)
+        {
+            System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
+        }
+
         private void OnConfigChange(object sender, OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
+
+            drivers = new Dictionary<string, LogixDriver>();
 
             try
             {
@@ -65,9 +77,12 @@ namespace TcHmiLogixDriver
                     var driver = LoadTarget(t.Key, t.Value);
                     drivers.Add(t.Key, driver);
                 }
+
+                diagnosticsValue = GetDiagnostics();
             }
             catch (Exception ex)
             {
+                System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
                 Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
         }
@@ -106,8 +121,11 @@ namespace TcHmiLogixDriver
             else
             {
                 // load tag definitions from cache
-                var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
-                target.AddTagDefinition(tags);
+                if (!string.IsNullOrEmpty(config.tagDefinitionCache)) 
+                {
+                    var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
+                    target.AddTagDefinition(tags);
+                }
             }
 
             symbolProvider.Add(target.Name, new LogixSymbol(driver, requestedSchemas));
@@ -136,7 +154,7 @@ namespace TcHmiLogixDriver
                         {
                             case "Diagnostics":
                                 command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                                command.ReadValue = GetDiagnostics();
+                                command.ReadValue = diagnosticsValue ?? GetDiagnostics();
                                 break;
 
                             default:
@@ -147,6 +165,8 @@ namespace TcHmiLogixDriver
                     }
                     catch (Exception ex)
                     {
+                        logRequestException(ex);
+
                         command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
                         command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
                     }
@@ -154,6 +174,8 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
+                logRequestException(ex);
+
                 var command = e.Commands.FirstOrDefault();
                 if (command != null)
                 {
@@ -162,18 +184,37 @@ namespace TcHmiLogixDriver
                 }
                 else
                 {
-                    throw new TcHmiException("u r cooked: " + ex.ToString(), ErrorValue.HMI_E_EXTENSION);
+                    Console.WriteLine("u r cooked: " + ex.ToString(), ErrorValue.HMI_E_EXTENSION);
                 }
                 
             }
         }
 
-        // TODO: implement
+        private void logRequestException(Exception ex)
+        {
+            requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
+            if (requestExceptionLog.Count > 250)
+                requestExceptionLog.Dequeue();
+        }
+
         private Value GetDiagnostics()
         {
-            var diag = new LogixDriverDiagnostics();
-            diag.Targets.Add("Test", new TargetDiagnostics(connectionState: "CONNECTED", model: "", firmware: ""));
-            return TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diag));
+            var diagnostics = new LogixDriverDiagnostics();
+
+            foreach (var driver in drivers.Values)
+            {
+                TargetDiagnostics diag;
+                var diagString = driver.ReadControllerInfo();
+
+                if (diagString != string.Empty)
+                    diag = new TargetDiagnostics(connectionState: "CONNECTED", model: diagString.Split(' ')[0], diagString.Split(' ')[2]);
+                else
+                    diag = new TargetDiagnostics(connectionState: "DISCONNECTED", model: "", firmware: "");
+
+                diagnostics.Targets.Add(driver.Target.Name, diag);
+            }
+
+            return TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diagnostics));
         }
     }
 }

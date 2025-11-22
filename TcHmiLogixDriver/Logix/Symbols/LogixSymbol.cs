@@ -1,20 +1,26 @@
 using Logix;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
+using TcHmiSrv.Core.Listeners;
+using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
-    public class LogixSymbol : Symbol
+    public class LogixSymbol : Symbol, IDisposable
     {
         private LogixDriver driver;
         private IEnumerable<string> mappedSymbols;
         private int mappedSymbolsCount = 0;
         private LookupTrie<string> mappingTree;
+
+        private ConcurrentDictionary<uint, List<string>> subscriptionSymbols = new();
+        private readonly SubscriptionListener subscriptionListener = new();
 
         public LogixSymbol(LogixDriver driver, IEnumerable<string> mappedSymbols) 
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
@@ -22,6 +28,24 @@ namespace TcHmiLogixDriver.Logix.Symbols
             this.driver = driver;
             this.mappedSymbols = mappedSymbols;
             driver.ValueResolver = new LogixSymbolValueResolver();
+            subscriptionListener.OnUnsubscribe += onUnsubscribe;
+        }
+
+        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
+        {
+            if (subscriptionSymbols.TryGetValue(e.Context.SubscriptionId, out var symbols))
+            {
+                driver.UnsubscribeTags(symbols);
+            }
+        }
+
+        private void AddSymbolSubscription(uint subscriptionId, string symbol)
+        {
+            driver.SubscribeTag(symbol);
+            if (subscriptionSymbols.ContainsKey(subscriptionId))
+                subscriptionSymbols[subscriptionId].Add(symbol);
+            else
+                subscriptionSymbols.TryAdd(subscriptionId, new List<string>() { symbol });
         }
 
         // A tree structure (trie) gives us an efficient way to compare the requested symbol path
@@ -56,53 +80,54 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 mappedSymbolsCount = mappedSymbols.Count();
             }
 
-            // nested symbol requested
-            if (elements.Count > 1)
-            {
-                // get mapped element list with matching / partial matching path
-                var match = mappingTree.TryDescend(elements).GetPath().ToList();
+            // get mapped element list with matching / partial matching path
+            var match = mappingTree.TryDescend(elements).GetPath().ToList();
 
-                if (match.Count() > 0)
+            if (match.Count() > 0)
+            {
+                elements.Dequeue();
+
+                // build tag string
+                var symbolPath = match.Aggregate((acc, s) =>
                 {
                     elements.Dequeue();
+                    return int.TryParse(s, out var _) ? acc += $"[{s}]" :
+                        acc += $".{s}";
+                });
 
-                    // build tag string
-                    var symbolPath = match.Aggregate((acc, s) =>
-                    {
-                        elements.Dequeue();
-                        return int.TryParse(s, out var _) ? acc += $"[{s}]" :
-                            acc += $".{s}";
-                    });
+                AddSymbolSubscription(context.SubscriptionId, symbolPath);
+                var read = driver.ReadTagValue(symbolPath) as Value;
 
-                    // read tag
-                    var read = driver.ReadTagValue(symbolPath) as Value;
-
-                    // generate return value
-                    while (elements.Count > 0)
-                    {
-                        var member = elements.Dequeue();
-                        if (int.TryParse(member, out var i))
-                            read = read[i];
-                        else
-                            read = read[member];
-                    }
-                    return read;
-                }
-                else
+                // generate return value
+                while (elements.Count > 0)
                 {
-                    throw new Exception($"Requested symbol path: {string.Join("::", elements)} not found in map tree.");
+                    var member = elements.Dequeue();
+                    if (int.TryParse(member, out var i))
+                        read = read[i];
+                    else
+                        read = read[member];
                 }
+                return read;
+            }
+            else
+            {
+                throw new Exception($"Requested symbol path: {string.Join("::", elements)} not found in map tree.");
             }
 
             // read root tag and return full value
-            driver.Target.TagDefinitions.TryGetValue(elements.Dequeue(), out var tagDef);
-            var root = driver.ReadTagValue(tagDef.Name) as Value;
-            return root;
+            //driver.Target.TagDefinitions.TryGetValue(elements.Dequeue(), out var tagDef);
+            //var root = driver.ReadTagValue(tagDef.Name) as Value;
+            //return root;
         }
 
         protected override Value Write(Queue<string> elements, Value value, Context context)
         {
             throw new NotImplementedException();
+        }
+
+        public void Dispose()
+        {
+            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
         }
     }
 }

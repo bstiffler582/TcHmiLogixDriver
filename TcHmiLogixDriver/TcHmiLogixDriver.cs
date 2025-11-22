@@ -21,7 +21,6 @@ using TcHmiSrv.Core.Tools.Json.Newtonsoft;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
 using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
-using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 
 namespace TcHmiLogixDriver
 {
@@ -31,7 +30,7 @@ namespace TcHmiLogixDriver
         private readonly RequestListener requestListener = new();
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
-        private readonly SubscriptionListener subscriptionListener = new();
+        
         
         private LogixDriverConfig configuration;
         private DynamicSymbolsProvider symbolProvider;
@@ -51,7 +50,6 @@ namespace TcHmiLogixDriver
             requestListener.OnRequest += onRequest;
             configListener.OnChange += onConfigChange;
             shutdownListener.OnShutdown += onShutDown;
-            subscriptionListener.OnUnsubscribe += onUnsubscribe;
 
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
             symbolProvider = new DynamicSymbolsProvider();
@@ -59,20 +57,12 @@ namespace TcHmiLogixDriver
             return ErrorValue.HMI_SUCCESS;
         }
 
-        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
-        {
-            subscriptionManager.RemoveSubscription(e.Context.SubscriptionId);
-            
-            // update drivers
-            foreach (var driver in drivers)
-            {
-                // compare what's requested with what's mapped (again)
-                // tell driver to subscribe longest prefix of requested symbols
-            }
-        }
-
         private void onShutDown(object sender, OnShutdownEventArgs e)
         {
+            requestListener.OnRequest -= onRequest;
+            configListener.OnChange -= onConfigChange;
+            shutdownListener.OnShutdown -= onShutDown;
+
             System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
         }
 
@@ -145,6 +135,8 @@ namespace TcHmiLogixDriver
                 }
             }
 
+            // maybe store requested schemas in subscription manager as well?
+            // then pass that into Symbol
             symbolProvider.Add(target.Name, new LogixSymbol(driver, requestedSchemas));
             return driver;
         }
@@ -161,12 +153,6 @@ namespace TcHmiLogixDriver
                 // store requested schema paths - maybe there is a better way to retrieved mapped symbols?
                 if (commands.First().Name == "TcHmiLogixDriver.GetSchema")
                     requestedSchemas.Add(commands.First().WriteValue);
-
-                // default symbols (ListSymbols, GetSchema) are requested with id 0
-                if (e.Context.SubscriptionId != 0)
-                {
-                    // TODO: add subscriptions to manager
-                }
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
                 {

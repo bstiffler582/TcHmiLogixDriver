@@ -5,22 +5,23 @@
 //-----------------------------------------------------------------------
 
 using Logix;
-using TcHmiLogixDriver.Logix;
-using TcHmiLogixDriver.Logix.Symbols;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Timers;
+using TcHmiLogixDriver.Logix;
+using TcHmiLogixDriver.Logix.Symbols;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
 using TcHmiSrv.Core.Listeners;
 using TcHmiSrv.Core.Listeners.ConfigListenerEventArgs;
+using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
+using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
-using TcHmiSrv.Core.Tools.Json.Newtonsoft.Converters;
 using TcHmiSrv.Core.Tools.Management;
-using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
 
 namespace TcHmiLogixDriver
 {
@@ -30,16 +31,16 @@ namespace TcHmiLogixDriver
         private readonly RequestListener requestListener = new();
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
-        
-        
-        private LogixDriverConfig configuration;
-        private DynamicSymbolsProvider symbolProvider;
+        private SubscriptionListener subscriptionListener = new();
 
+        private LogixDriverConfig configuration;
+        private LogixDriverDiagnostics diagnostics;
+
+        private DynamicSymbolsProvider symbolProvider;
         private HashSet<string> requestedSchemas = new();
         private Dictionary<string, LogixDriver> drivers;
-        private Value diagnosticsValue;
 
-        private readonly SubscriptionManager subscriptionManager = new();
+        private Timer connectionStateTimer;
 
         // debug
         private Queue<string> requestExceptionLog = new();
@@ -47,14 +48,41 @@ namespace TcHmiLogixDriver
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
         {
+            //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
+
+            // server event handling
             requestListener.OnRequest += onRequest;
             configListener.OnChange += onConfigChange;
             shutdownListener.OnShutdown += onShutDown;
+            subscriptionListener.OnUnsubscribe += onUnsubscribe;
 
-            //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
+            // target connection state management
+            connectionStateTimer = new Timer(5000);
+            connectionStateTimer.AutoReset = false;
+            connectionStateTimer.Elapsed += onConnectionStateTimerElapsed;
+            connectionStateTimer.Start();
+
             symbolProvider = new DynamicSymbolsProvider();
 
             return ErrorValue.HMI_SUCCESS;
+        }
+
+        // target connection state management
+        private void onConnectionStateTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
+            foreach (var driver in disconnectedDrivers) 
+            {
+                try
+                {
+                    TryConnectDriver(driver);
+                }
+                catch (Exception ex) 
+                {
+                    System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
+                }
+            }
+            connectionStateTimer.Start();
         }
 
         private void onShutDown(object sender, OnShutdownEventArgs e)
@@ -62,36 +90,104 @@ namespace TcHmiLogixDriver
             requestListener.OnRequest -= onRequest;
             configListener.OnChange -= onConfigChange;
             shutdownListener.OnShutdown -= onShutDown;
+            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
+
+            connectionStateTimer.Stop();
+            connectionStateTimer.Elapsed -= onConnectionStateTimerElapsed;
+            connectionStateTimer.Dispose();
+
+            foreach (var driver in drivers.Values)
+                driver.Dispose();
 
             System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
         }
 
+        // update configuration
         private void onConfigChange(object sender, OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
 
             drivers = new Dictionary<string, LogixDriver>();
+            symbolProvider = new DynamicSymbolsProvider();
+            diagnostics = new LogixDriverDiagnostics();
 
             try
             {
                 configuration = GetConfiguration();
-                symbolProvider = new DynamicSymbolsProvider();
-                drivers = new Dictionary<string, LogixDriver>();
 
-                foreach (var t in configuration.Targets)
+                foreach (var targetConfig in configuration.Targets)
                 {
-                    var driver = LoadTarget(t.Key, t.Value);
-                    drivers.Add(t.Key, driver);
-                }
+                    var targetName = targetConfig.Key;
+                    var config = targetConfig.Value;
 
-                diagnosticsValue = GetDiagnostics();
+                    var target = new LogixTarget(targetName, config.targetAddress, config.targetSlot);
+                    var driver = new LogixDriver(target);
+                    var diag = new TargetDiagnostics();
+
+                    diagnostics.Targets.Add(targetName, diag);
+                    drivers.Add(targetName, driver);
+
+                    TryConnectDriver(driver);
+                }
             }
             catch (Exception ex)
             {
                 System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
                 Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
+        }
+
+        private void TryConnectDriver(LogixDriver driver)
+        {
+            var info = driver.ReadControllerInfo();
+            var config = configuration.Targets[driver.Target.Name];
+
+            if (!string.IsNullOrEmpty(info))
+            {
+                // update diagnostics
+                diagnostics.Targets[driver.Target.Name] =
+                    new TargetDiagnostics(connectionState: "CONNECTED", model: info.Split(' ')[0], info.Split(' ')[2]);
+
+                // browse tags
+                if (config.tagBrowser)
+                {
+                    var tags = driver.LoadTags();
+
+                    // cache tags
+                    var cacheConfigPath = $"Targets::{driver.Target.Name}::tagDefinitionCache";
+                    var json = JsonConvert.SerializeObject(tags);
+                    TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, cacheConfigPath, json);
+                }
+
+                // re / create symbol
+                if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
+                {
+                    (oldSymbol as LogixSymbol).Dispose();
+                    symbolProvider.Remove(driver.Target.Name);
+                }
+
+                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
+            }
+            else
+            {
+                // update diagnostics
+                diagnostics.Targets[driver.Target.Name] =
+                    new TargetDiagnostics(connectionState: "DISCONNECTED", "", "");
+
+                // read tag defintion cache
+                if (!config.tagBrowser && !string.IsNullOrEmpty(config.tagDefinitionCache))
+                {
+                    var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
+                    driver.Target.AddTagDefinition(tags);
+                }
+            }
+
+            // update symbol provider
+            if (symbolProvider.TryGetValue(driver.Target.Name, out var symbol))
+                symbol = new LogixSymbol(driver, requestedSchemas);
+            else
+                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
         }
 
         private LogixDriverConfig GetConfiguration()
@@ -111,36 +207,6 @@ namespace TcHmiLogixDriver
             };
         }
 
-        private LogixDriver LoadTarget(string targetName, TargetConfig config)
-        {
-            var target = new LogixTarget(targetName, config.targetAddress, config.targetSlot);
-            var driver = new LogixDriver(target);
-
-            var cacheConfigPath = $"Targets::{target.Name}::tagDefinitionCache";
-            if (config.tagBrowser)
-            {
-                var tags = driver.LoadTags();
-
-                // cache tag defintions in config for offline use
-                var json = JsonConvert.SerializeObject(tags);
-                TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, $"Targets::{target.Name}::tagDefinitionCache", json);
-            }
-            else
-            {
-                // load tag definitions from cache
-                if (!string.IsNullOrEmpty(config.tagDefinitionCache)) 
-                {
-                    var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
-                    target.AddTagDefinition(tags);
-                }
-            }
-
-            // maybe store requested schemas in subscription manager as well?
-            // then pass that into Symbol
-            symbolProvider.Add(target.Name, new LogixSymbol(driver, requestedSchemas));
-            return driver;
-        }
-
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
         private void onRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
@@ -156,28 +222,18 @@ namespace TcHmiLogixDriver
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
                 {
-                    try
+                    // Use the mapping to check which command is requested
+                    switch (command.Mapping)
                     {
-                        // Use the mapping to check which command is requested
-                        switch (command.Mapping)
-                        {
-                            case "Diagnostics":
-                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                                command.ReadValue = diagnosticsValue ?? GetDiagnostics();
-                                break;
+                        case "Diagnostics":
+                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+                            command.ReadValue = diagnostics.ToValue();
+                            break;
 
-                            default:
-                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                                command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
-                                break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logRequestException(ex);
-
-                        command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                        command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
+                        default:
+                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
+                            command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
+                            break;
                     }
                 }
             }
@@ -199,32 +255,19 @@ namespace TcHmiLogixDriver
             }
         }
 
+        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
+        {
+            foreach (var symbol in symbolProvider.Values)
+            {
+                (symbol as LogixSymbol).UnsubscribeById(e.Context.SubscriptionId);
+            }
+        }
+
         private void logRequestException(Exception ex)
         {
             requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
             if (requestExceptionLog.Count > 250)
                 requestExceptionLog.Dequeue();
-        }
-
-        private Value GetDiagnostics()
-        {
-            var diagnostics = new LogixDriverDiagnostics();
-
-            foreach (var driver in drivers.Values)
-            {
-                TargetDiagnostics diag;
-                var diagString = driver.ReadControllerInfo();
-
-                if (diagString != string.Empty)
-                    diag = new TargetDiagnostics(connectionState: "CONNECTED", model: diagString.Split(' ')[0], diagString.Split(' ')[2]);
-                else
-                    diag = new TargetDiagnostics(connectionState: "DISCONNECTED", model: "", firmware: "");
-
-                diagnostics.Targets.Add(driver.Target.Name, diag);
-            }
-
-            diagnosticsValue = TcHmiJsonSerializer.Deserialize(ValueJsonConverter.DefaultConverter, JsonConvert.SerializeObject(diagnostics));
-            return diagnosticsValue;
         }
     }
 }

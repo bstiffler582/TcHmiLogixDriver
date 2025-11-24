@@ -1,42 +1,33 @@
 ﻿using Logix.Tags;
 using libplctag;
-using System.Collections.Concurrent;
 
 namespace Logix
 {
     public class LogixDriver : IDisposable
     {
-        class SubscribedTag
-        {
-            public readonly Tag Tag;
-            public bool IsStale { get; set; }
-            public SubscribedTag(Tag tag)
-            {
-                Tag = tag;
-                IsStale = true;
-            }
-        }
-
         public ILogixTagReader TagReader { get; set; } = new LogixTagReader();
         public ILogixTagWriter TagWriter { get; set; } = new LogixTagWriter();
         public ILogixTagLoader TagLoader { get; set; } = new LogixTagLoader();
         public ILogixValueResolver ValueResolver { get; set; } = new LogixDefaultValueResolver();
+        public bool IsConnected => isConnected;
 
         public readonly LogixTarget Target;
-
         private Dictionary<string, Tag> tagCache = new();
+        private LogixTagSubscription subscription;
+        private volatile bool isConnected = false;
 
-        private bool isSubscriptionProcessing = false;
-        private ConcurrentDictionary<string, SubscribedTag> subscribedTags = new();
-        private PeriodicTimer subscriptionTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
-        private Task? subscriptionProcess;
-        private CancellationTokenSource? subscriptionCts;
+        private const string EX_ERR_TIMEOUT = "ErrorTimeout";
 
         public LogixDriver(LogixTarget target)
         {
             Target = target;
+            subscription = new LogixTagSubscription(this, 500);
         }
 
+        /// <summary>
+        /// Read tag info and build tag definitions
+        /// </summary>
+        /// <returns>Mutates Target</returns>
         public IEnumerable<TagDefinition> LoadTags()
         {
             var tags = TagLoader.LoadTags(Target, TagReader);
@@ -44,37 +35,53 @@ namespace Logix
             return tags;
         }
 
+        // potential read optimization:
+        // - generate tree
+        // - keep tags sorted by path length
+        // - read root-most tags first
+        // - if trying to read child of parent already read
+        // - use tagdefinition (type, offset) to extract member value
+
+        /// <summary>
+        /// Reads a PLC tag by name
+        /// </summary>
+        /// <param name="tagName"></param>
+        /// <returns>Type dictated by tag definition and ValueResolver</returns>
+        /// <exception cref="Exception"></exception>
         public object ReadTagValue(string tagName)
         {
             var definition = Target.TryGetTagDefinition(tagName);
             if (definition is null)
                 throw new Exception("Tag definition not found.");
 
-            // if subscribed
-            if (subscribedTags.TryGetValue(tagName, out var subscribedTag))
+            // check if subscribed
+            var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
+            if (subscribedTag is not null && !isStale)
+                return ValueResolver.ResolveValue(subscribedTag, definition);
+
+            try
             {
-                if (!subscribedTag.IsStale)
-                    return ValueResolver.ResolveValue(subscribedTag.Tag, definition);
-                else
+                if (!tagCache.TryGetValue(tagName, out var tag))
                 {
-                    // going to do an explicit read, mark not stale
-                    subscribedTag.IsStale = false;
+                    tag = TagReader.ReadTagValue(Target, tagName, (int)definition.Type.Dims);
+                    tagCache.Add(tagName, tag);
                 }
-            }
 
-            if (!tagCache.TryGetValue(tagName, out var tag))
-            {
-                tag = TagReader.ReadTagValue(Target, tagName, (int)definition.Type.Dims);
-                tagCache.Add(tagName, tag);
-            }
-            else
-            {
-                // don't try to read at the same time as subscription
-                if (subscribedTag is null || !isSubscriptionProcessing)
-                    tag.Read();
-            }
+                // wait for subscription reads
+                if (subscription.Busy)
+                    subscription.WaitUntilIdle();
 
-            return ValueResolver.ResolveValue(tag, definition);
+                tag.Read();
+
+                return ValueResolver.ResolveValue(tag, definition);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    isConnected = false;
+                
+                throw new Exception("Tag read exception", ex);
+            }
         }
 
         public string ReadControllerInfo()
@@ -83,8 +90,15 @@ namespace Logix
             try
             {
                 info = TagReader.ReadControllerInfo(Target);
+                isConnected = true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    isConnected = false;
+                else
+                    throw new Exception("Tag read exception.", ex);
+            }
             return info;
         }
 
@@ -94,67 +108,31 @@ namespace Logix
             if (definition is null)
                 throw new Exception("Tag definition not found.");
 
-            // if not started, start subscription process
-            if (subscriptionProcess is null)
-            {
-                subscriptionCts = new CancellationTokenSource();
-                subscriptionProcess = Task.Run(() => ProcessSubscriptionReads(subscriptionCts.Token));
-            }
-
-            if (!subscribedTags.ContainsKey(tagName))
+            if (!subscription.IsTagSubscribed(tagName))
             {
                 var tag = GetTag(Target, tagName, (int)definition.Type.Dims);
-                subscribedTags.TryAdd(tagName, new SubscribedTag(tag));
+                subscription.SubscribeTag(tag);
             }
-        }
-
-        public void SubscribeTags(IEnumerable<string> tagNames)
-        {
-            foreach (var tag in tagNames)
-                SubscribeTag(tag);
         }
 
         public void UnsubscribeTag(string tagName)
         {
-            subscribedTags.TryRemove(tagName, out _);
+            subscription.UnsubscribeTag(tagName);
         }
 
         public void UnsubscribeTags(IEnumerable<string> tagNames)
         {
-            foreach (var tag in tagNames)
-                UnsubscribeTag(tag);
-        }
-
-        private async void ProcessSubscriptionReads(CancellationToken cancel)
-        {
-            while (await subscriptionTimer.WaitForNextTickAsync(cancel))
-            {
-                // Prevent re-entry
-                if (isSubscriptionProcessing)
-                    continue;
-
-                isSubscriptionProcessing = true;
-
-                // set all stale
-                foreach (var stale in subscribedTags.Values)
-                    stale.IsStale = true;
-
-                // read tags
-                foreach (var subscribed in subscribedTags.Values)
-                {
-                    await subscribed.Tag.ReadAsync();
-                    subscribed.IsStale = false;
-                }
-
-                isSubscriptionProcessing = false;
-            }
+            foreach (var tagName in tagNames)
+                subscription.UnsubscribeTag(tagName);
         }
 
         private Tag GetTag(LogixTarget target, string path, int elements = 1)
         {
-            if (!tagCache.TryGetValue(path, out var tag))
+            if (tagCache.TryGetValue(path, out var cached))
+                return cached;
+            else
             {
-                tag = new Tag
+                var tag = new Tag
                 {
                     Gateway = target.Gateway,
                     Path = target.Path,
@@ -164,9 +142,11 @@ namespace Logix
                     ElementCount = Math.Max(elements, 1),
                     Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
                 };
-            }
 
-            return tag;
+                tagCache.Add(path, tag);
+
+                return tag;
+            }
         }
 
         public void Dispose()
@@ -174,11 +154,7 @@ namespace Logix
             foreach (var tag in tagCache.Values)
                 tag.Dispose();
 
-            foreach (var subscribed in subscribedTags.Values)
-                subscribed.Tag.Dispose();
-
-            subscriptionCts?.Cancel();
-            subscriptionTimer.Dispose();
+            subscription.Dispose();
         }
     }
 }

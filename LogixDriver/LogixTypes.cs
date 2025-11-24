@@ -87,23 +87,6 @@ namespace Logix
             }
         }
 
-        public static object PrimitiveValueResolver(Tag tag, ushort typeCode, int offset = 0)
-        {
-            return (Code)(typeCode) switch
-            {
-                Code.BOOL => tag.GetBit(offset),
-                Code.SINT or Code.USINT => tag.GetInt8(offset),
-                Code.INT or Code.UINT => tag.GetInt16(offset),
-                Code.DINT or Code.UDINT => tag.GetInt32(offset),
-                Code.LINT or Code.ULINT => tag.GetInt64(offset),
-                Code.REAL => tag.GetFloat32(offset),
-                Code.LREAL => tag.GetFloat64(offset),
-                Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
-                    => tag.GetString(offset),
-                _ => throw new Exception($"Primitive type code:{typeCode:X} not handled")
-            };
-        }
-
         private static ushort GetTypeLength(ushort typeCode)
         {
             return (Code)(typeCode) switch

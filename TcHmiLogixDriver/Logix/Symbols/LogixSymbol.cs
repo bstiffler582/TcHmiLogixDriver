@@ -18,9 +18,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         private IEnumerable<string> mappedSymbols;
         private int mappedSymbolsCount = 0;
         private LookupTrie<string> mappingTree;
-
         private ConcurrentDictionary<uint, List<string>> subscriptionSymbols = new();
-        private readonly SubscriptionListener subscriptionListener = new();
 
         public LogixSymbol(LogixDriver driver, IEnumerable<string> mappedSymbols) 
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
@@ -28,24 +26,86 @@ namespace TcHmiLogixDriver.Logix.Symbols
             this.driver = driver;
             this.mappedSymbols = mappedSymbols;
             driver.ValueResolver = new LogixSymbolValueResolver();
-            subscriptionListener.OnUnsubscribe += onUnsubscribe;
         }
 
-        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
+        /// <summary>
+        /// We receive a full requested symbol path, but we only want to read what is mapped in TcHmi.
+        /// So we keep track of what's mapped (in the mappingTree) and compare with what is requested.
+        /// Then we resolve the value based on the difference between what is read and what is requested.
+        /// </summary>
+        /// <param name="elements">Queue that represents requested symbol path</param>
+        /// <param name="context"></param>
+        /// <returns>Resolved TcHmi Value</returns>
+        protected override Value Read(Queue<string> elements, Context context)
         {
-            if (subscriptionSymbols.TryGetValue(e.Context.SubscriptionId, out var symbols))
+            if (!driver.IsConnected)
+                throw new Exception($"No connection to target: {driver.Target.Name}");
+            
+            // rebuild the symbol mapping tree if new symbols are found
+            if (mappedSymbols.Count() != mappedSymbolsCount)
             {
-                driver.UnsubscribeTags(symbols);
+                mappingTree = BuildMappingTree(mappedSymbols.Where(s => s.StartsWith(driver.Target.Name)));
+                mappedSymbolsCount = mappedSymbols.Count();
+            }
+
+            // get mapped element list with matching / partial matching path
+            var match = mappingTree.TryDescend(elements).GetPath().ToList();
+
+            if (match.Count() > 0)
+            {
+                elements.Dequeue();
+
+                // build tag string
+                var tagName = match.Aggregate((acc, s) =>
+                {
+                    elements.Dequeue();
+                    return int.TryParse(s, out var _) ? acc += $"[{s}]" :
+                        acc += $".{s}";
+                });
+
+                AddSymbolSubscription(context.SubscriptionId, tagName);
+                var readValue = driver.ReadTagValue(tagName) as Value;
+
+                // generate return value
+                while (elements.Count > 0)
+                {
+                    var member = elements.Dequeue();
+                    if (int.TryParse(member, out var i))
+                        readValue = readValue[i];
+                    else
+                        readValue = readValue[member];
+                }
+                return readValue;
+            }
+            else
+            {
+                throw new Exception($"Requested symbol path: {string.Join("::", elements)} not found in map tree.");
             }
         }
 
+        protected override Value Write(Queue<string> elements, Value value, Context context)
+        {
+            throw new NotImplementedException();
+        }
+
+        // manage read subscriptions
         private void AddSymbolSubscription(uint subscriptionId, string symbol)
         {
             driver.SubscribeTag(symbol);
+
             if (subscriptionSymbols.ContainsKey(subscriptionId))
                 subscriptionSymbols[subscriptionId].Add(symbol);
             else
                 subscriptionSymbols.TryAdd(subscriptionId, new List<string>() { symbol });
+        }
+
+        public void UnsubscribeById(uint subscriptionId)
+        {
+            if (subscriptionSymbols.TryGetValue(subscriptionId, out var symbols))
+            {
+                driver.UnsubscribeTags(symbols);
+                subscriptionSymbols.Remove(subscriptionId, out _);
+            }
         }
 
         // A tree structure (trie) gives us an efficient way to compare the requested symbol path
@@ -63,71 +123,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return tree;
         }
 
-        /// <summary>
-        /// We receive a full requested symbol path, but we only want to read what is mapped in TcHmi.
-        /// So we keep track of what's mapped (in the mappingTree) and compare with what is requested.
-        /// Then we resolve the value based on the difference between what is read and what is requested.
-        /// </summary>
-        /// <param name="elements">Queue that represents requested symbol path</param>
-        /// <param name="context"></param>
-        /// <returns>Resolved TcHmi Value</returns>
-        protected override Value Read(Queue<string> elements, Context context)
-        {
-            // rebuild symbol mapping tree
-            if (mappedSymbols.Count() != mappedSymbolsCount)
-            {
-                mappingTree = BuildMappingTree(mappedSymbols.Where(s => s.StartsWith(driver.Target.Name)));
-                mappedSymbolsCount = mappedSymbols.Count();
-            }
-
-            // get mapped element list with matching / partial matching path
-            var match = mappingTree.TryDescend(elements).GetPath().ToList();
-
-            if (match.Count() > 0)
-            {
-                elements.Dequeue();
-
-                // build tag string
-                var symbolPath = match.Aggregate((acc, s) =>
-                {
-                    elements.Dequeue();
-                    return int.TryParse(s, out var _) ? acc += $"[{s}]" :
-                        acc += $".{s}";
-                });
-
-                AddSymbolSubscription(context.SubscriptionId, symbolPath);
-                var read = driver.ReadTagValue(symbolPath) as Value;
-
-                // generate return value
-                while (elements.Count > 0)
-                {
-                    var member = elements.Dequeue();
-                    if (int.TryParse(member, out var i))
-                        read = read[i];
-                    else
-                        read = read[member];
-                }
-                return read;
-            }
-            else
-            {
-                throw new Exception($"Requested symbol path: {string.Join("::", elements)} not found in map tree.");
-            }
-
-            // read root tag and return full value
-            //driver.Target.TagDefinitions.TryGetValue(elements.Dequeue(), out var tagDef);
-            //var root = driver.ReadTagValue(tagDef.Name) as Value;
-            //return root;
-        }
-
-        protected override Value Write(Queue<string> elements, Value value, Context context)
-        {
-            throw new NotImplementedException();
-        }
-
         public void Dispose()
         {
-            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
+            //subscriptionListener.OnUnsubscribe -= onUnsubscribe;
         }
     }
 }

@@ -36,7 +36,7 @@ namespace TcHmiLogixDriver.Logix
             }
             else
             {
-                var ret = LogixTypes.PrimitiveValueResolver(tag, definition.Type.Code, offset);
+                var ret = PrimitiveValueResolver(tag, definition.Type.Code, offset);
                 return (Code)(definition.Type.Code) switch
                 {
                     Code.BOOL => (bool)ret,

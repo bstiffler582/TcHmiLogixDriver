@@ -6,7 +6,6 @@ namespace Logix
     public class LogixDriver : IDisposable
     {
         public ILogixTagReader TagReader { get; set; } = new LogixTagReader();
-        public ILogixTagWriter TagWriter { get; set; } = new LogixTagWriter();
         public ILogixTagLoader TagLoader { get; set; } = new LogixTagLoader();
         public ILogixValueResolver ValueResolver { get; set; } = new LogixDefaultValueResolver();
         public bool IsConnected => isConnected;
@@ -35,13 +34,6 @@ namespace Logix
             return tags;
         }
 
-        // potential read optimization:
-        // - generate tree
-        // - keep tags sorted by path length
-        // - read root-most tags first
-        // - if trying to read child of parent already read
-        // - use tagdefinition (type, offset) to extract member value
-
         /// <summary>
         /// Reads a PLC tag by name
         /// </summary>
@@ -63,7 +55,7 @@ namespace Logix
             {
                 if (!tagCache.TryGetValue(tagName, out var tag))
                 {
-                    tag = TagReader.ReadTagValue(Target, tagName, (int)definition.Type.Dims);
+                    tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
                     tagCache.Add(tagName, tag);
                 }
 
@@ -80,6 +72,36 @@ namespace Logix
                 if (ex.Message == EX_ERR_TIMEOUT)
                     isConnected = false;
                 
+                throw new Exception("Tag read exception", ex);
+            }
+        }
+
+        public void WriteTagValue(string tagName, object value)
+        {
+            var definition = Target.TryGetTagDefinition(tagName);
+            if (definition is null)
+                throw new Exception("Tag definition not found.");
+
+            try
+            {
+                if (!tagCache.TryGetValue(tagName, out var tag))
+                {
+                    tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
+                    tagCache.Add(tagName, tag);
+                }
+
+                if (!tag.IsInitialized)
+                    tag.Initialize();
+
+                ValueResolver.WriteTagBuffer(tag, definition, value);
+
+                tag.Write();
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    isConnected = false;
+
                 throw new Exception("Tag read exception", ex);
             }
         }
@@ -110,7 +132,7 @@ namespace Logix
 
             if (!subscription.IsTagSubscribed(tagName))
             {
-                var tag = GetTag(Target, tagName, (int)definition.Type.Dims);
+                var tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
                 subscription.SubscribeTag(tag);
             }
         }
@@ -124,29 +146,6 @@ namespace Logix
         {
             foreach (var tagName in tagNames)
                 subscription.UnsubscribeTag(tagName);
-        }
-
-        private Tag GetTag(LogixTarget target, string path, int elements = 1)
-        {
-            if (tagCache.TryGetValue(path, out var cached))
-                return cached;
-            else
-            {
-                var tag = new Tag
-                {
-                    Gateway = target.Gateway,
-                    Path = target.Path,
-                    PlcType = target.PlcType,
-                    Protocol = target.Protocol,
-                    Name = path,
-                    ElementCount = Math.Max(elements, 1),
-                    Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
-                };
-
-                tagCache.Add(path, tag);
-
-                return tag;
-            }
         }
 
         public void Dispose()

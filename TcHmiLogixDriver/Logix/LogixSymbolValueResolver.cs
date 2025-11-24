@@ -52,5 +52,51 @@ namespace TcHmiLogixDriver.Logix
                 };
             }
         }
+
+        public override void WriteTagBuffer(Tag tag, TagDefinition definition, Value value, int offset = 0)
+        {
+            if (LogixTypes.IsArray(definition.Type.Code))
+            {
+                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                    return;
+
+                foreach (var m in definition.Type.Members)
+                {
+                    int.TryParse(m.Name, out var i);
+                    WriteTagBuffer(tag, m, value[i], offset + (int)m.Offset);
+                }
+
+            }
+            else if (LogixTypes.IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            {
+                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                    return;
+
+                var ret = new Value();
+                var members = new Value();
+                foreach (var m in definition.Type.Members)
+                {
+                    WriteTagBuffer(tag, m, value[m.Name], offset + (int)m.Offset);
+                }
+            }
+            else
+            {
+                object write = (Code)(definition.Type.Code) switch
+                {
+                    Code.BOOL => value.GetBool(),
+                    Code.SINT or Code.USINT => value.GetSByte(),
+                    Code.INT or Code.UINT => value.GetInt16(),
+                    Code.DINT or Code.UDINT => value.GetInt32(),
+                    Code.LINT or Code.ULINT => value.GetInt64(),
+                    Code.REAL => value.GetSingle(),
+                    Code.LREAL => value.GetDouble(),
+                    Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
+                        => value.GetString(),
+                    _ => throw new Exception($"Primitive type code:{definition.Type.Code:X} not handled")
+                };
+
+                PrimitiveValueWriter(tag, definition.Type.Code, write, offset);
+            }
+        }
     }
 }

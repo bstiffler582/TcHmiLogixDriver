@@ -117,8 +117,8 @@ namespace Logix.Tags
         internal class SubscribedTag
         {
             public readonly Tag Tag;
-            public bool IsStale => stale >= 2;
-            private int stale = 2;
+            public bool IsStale => stale > 1;
+            private volatile int stale = 2;
             public SubscribedTag(Tag tag)
             {
                 Tag = tag;

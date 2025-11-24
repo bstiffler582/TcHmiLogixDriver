@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
@@ -85,7 +86,17 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
         protected override Value Write(Queue<string> elements, Value value, Context context)
         {
-            throw new NotImplementedException();
+            // build tag string
+            string tagName = elements.Dequeue();
+            while (elements.TryDequeue(out var element))
+            {
+                tagName += int.TryParse(element, out var _) ? 
+                    $"[{element}]" : $".{element}";
+            }
+
+            driver.WriteTagValue(tagName, value);
+
+            return value;
         }
 
         // manage read subscriptions

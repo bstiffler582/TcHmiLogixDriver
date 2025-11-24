@@ -9,7 +9,7 @@ namespace Logix.Tags
         TagInfo[] ReadTagList(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
-        Tag ReadTagValue(LogixTarget target, string path, int elements = 1);
+        Tag GetTag(LogixTarget target, string path, int elements = 1);
         string ReadControllerInfo(LogixTarget target);
     }
 
@@ -63,7 +63,7 @@ namespace Logix.Tags
             }
         }
 
-        public Tag ReadTagValue(LogixTarget target, string path, int elements = 1)
+        public Tag GetTag(LogixTarget target, string path, int elements = 1)
         {
             var tag = new Tag
             {
@@ -76,7 +76,6 @@ namespace Logix.Tags
                 Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
             };
 
-            tag.Read();
             return tag;
         }
 

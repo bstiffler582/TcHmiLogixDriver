@@ -1,5 +1,4 @@
 using libplctag.DataTypes;
-using Logix;
 
 namespace Logix.Tags
 {

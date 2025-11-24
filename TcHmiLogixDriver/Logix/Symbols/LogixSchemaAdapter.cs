@@ -7,6 +7,13 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public static class LogixSchemaAdapter
     {
+        /// <summary>
+        /// Generates the JSON schema that represents all the types and members
+        /// of the PLC server symbol. This is the information the framework uses to
+        /// render the tag browser, create mappings, resolve types, etc.
+        /// </summary>
+        /// <param name="driver"></param>
+        /// <returns></returns>
         public static JsonSchemaValue BuildSymbolSchema(LogixDriver driver)
         {
             var typeCache = new HashSet<string>();
@@ -94,8 +101,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
                     {
                         foreach (var member in tag.Type.Members)
                         {
-                            if (member.Name.StartsWith("ZZZZZZZZZZ"))
-                                continue;
+                            // causes schema mismatch when writing UDTs
+                            //if (member.Name.StartsWith("ZZZZZZZZZZ"))
+                            //    continue;
 
                             var memberDef = ResolveTypeDefinitionSchema(member, definitions, cache, targetName);
                             udtMembers.Add(member.Name, memberDef);

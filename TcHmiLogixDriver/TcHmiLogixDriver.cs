@@ -85,23 +85,6 @@ namespace TcHmiLogixDriver
             connectionStateTimer.Start();
         }
 
-        private void onShutDown(object sender, OnShutdownEventArgs e)
-        {
-            requestListener.OnRequest -= onRequest;
-            configListener.OnChange -= onConfigChange;
-            shutdownListener.OnShutdown -= onShutDown;
-            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
-
-            connectionStateTimer.Stop();
-            connectionStateTimer.Elapsed -= onConnectionStateTimerElapsed;
-            connectionStateTimer.Dispose();
-
-            foreach (var driver in drivers.Values)
-                driver.Dispose();
-
-            System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
-        }
-
         // update configuration
         private void onConfigChange(object sender, OnChangeEventArgs e)
         {
@@ -136,6 +119,23 @@ namespace TcHmiLogixDriver
                 System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
                 Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
+        }
+
+        private LogixDriverConfig GetConfiguration()
+        {
+            var config = TcHmiApplication.AsyncHost.GetConfigValue(TcHmiApplication.Context, "Targets");
+
+            var targets = new Dictionary<string, TargetConfig>();
+            foreach (var target in config.Keys)
+            {
+                var targetConfig = TcHmiJsonSerializer.Deserialize<TargetConfig>(config[target].ToJson(), false);
+                targets.Add(target, targetConfig);
+            }
+
+            return new LogixDriverConfig
+            {
+                Targets = targets
+            };
         }
 
         private void TryConnectDriver(LogixDriver driver)
@@ -190,23 +190,6 @@ namespace TcHmiLogixDriver
                 symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
         }
 
-        private LogixDriverConfig GetConfiguration()
-        {
-            var config = TcHmiApplication.AsyncHost.GetConfigValue(TcHmiApplication.Context, "Targets");
-            
-            var targets = new Dictionary<string, TargetConfig>();
-            foreach (var target in config.Keys)
-            {
-                var targetConfig = TcHmiJsonSerializer.Deserialize<TargetConfig>(config[target].ToJson(), false);
-                targets.Add(target, targetConfig);
-            }
-
-            return new LogixDriverConfig
-            {
-                Targets = targets
-            };
-        }
-
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
         private void onRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
@@ -251,7 +234,6 @@ namespace TcHmiLogixDriver
                 {
                     Console.WriteLine("u r cooked: " + ex.ToString(), ErrorValue.HMI_E_EXTENSION);
                 }
-                
             }
         }
 
@@ -268,6 +250,24 @@ namespace TcHmiLogixDriver
             requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
             if (requestExceptionLog.Count > 250)
                 requestExceptionLog.Dequeue();
+        }
+
+        // cleanup
+        private void onShutDown(object sender, OnShutdownEventArgs e)
+        {
+            requestListener.OnRequest -= onRequest;
+            configListener.OnChange -= onConfigChange;
+            shutdownListener.OnShutdown -= onShutDown;
+            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
+
+            connectionStateTimer.Stop();
+            connectionStateTimer.Elapsed -= onConnectionStateTimerElapsed;
+            connectionStateTimer.Dispose();
+
+            foreach (var driver in drivers.Values)
+                driver.Dispose();
+
+            System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
         }
     }
 }

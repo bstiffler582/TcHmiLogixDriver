@@ -27,9 +27,9 @@ namespace Logix
         /// Read tag info and build tag definitions
         /// </summary>
         /// <returns>Mutates Target</returns>
-        public IEnumerable<TagDefinition> LoadTags()
+        public IEnumerable<TagDefinition> LoadTags(string selector = "*")
         {
-            var tags = TagLoader.LoadTags(Target, TagReader);
+            var tags = TagLoader.LoadTags(Target, TagReader, selector);
             Target.AddTagDefinition(tags);
             return tags;
         }

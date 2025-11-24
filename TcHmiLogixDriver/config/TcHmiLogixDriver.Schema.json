@@ -25,6 +25,11 @@
           "description": "Use online tag browser",
           "default": false
         },
+        "tagFilterSelector": {
+          "type": "string",
+          "description": "Filter tag browser with selector",
+          "default": "*"
+        },
         "tagDefinitionCache": {
           "type": "string",
           "description": "Cached tag definition data for offline use",
@@ -32,7 +37,7 @@
           "visibility": "AlwaysHide"
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout", "tagBrowser" ]
+      "required": [ "targetAddress", "targetSlot", "timeout", "tagBrowser", "tagFilterSelector" ]
     }
   },
   "properties": {

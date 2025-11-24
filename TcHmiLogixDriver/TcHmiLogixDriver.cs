@@ -152,7 +152,7 @@ namespace TcHmiLogixDriver
                 // browse tags
                 if (config.tagBrowser)
                 {
-                    var tags = driver.LoadTags();
+                    var tags = driver.LoadTags(config.tagFilterSelector);
 
                     // cache tags
                     var cacheConfigPath = $"Targets::{driver.Target.Name}::tagDefinitionCache";

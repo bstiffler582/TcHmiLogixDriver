@@ -9,7 +9,8 @@ namespace Logix.Tags
 
     public class LogixTagLoader : ILogixTagLoader
     {
-
+        
+        // TODO: Refine selector
         public IEnumerable<TagDefinition> LoadTags(LogixTarget target, ILogixTagReader reader, string selector = "*")
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
@@ -21,7 +22,7 @@ namespace Logix.Tags
             var tagInfos = reader.ReadTagList(target);
 
             // read all tags
-            if (selector == "*")
+            if (string.IsNullOrEmpty(selector) || selector == "*")
             {
                 var controllerTags = tagInfos
                 .Where(tag =>
@@ -47,6 +48,15 @@ namespace Logix.Tags
             }
             else
             {
+                if (selector.StartsWith("Program:"))
+                {
+                    // WIP
+                    // isolate program / tag names
+                    var programName = selector.Split(':')[1];
+                    var split = programName.Split('.');
+                    var tagName = (split.Length > 1) ? split[1] : null;
+                }
+
                 var programTags = tagInfos
                     .Where(tag => tag.Name.StartsWith($"Program:{selector}"))
                     .Select(tag =>

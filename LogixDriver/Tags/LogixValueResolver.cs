@@ -33,9 +33,9 @@ namespace Logix.Tags
             {
                 Code.BOOL => tag.GetBit(offset),
                 Code.SINT or Code.USINT => tag.GetInt8(offset),
-                Code.INT or Code.UINT => tag.GetInt16(offset),
-                Code.DINT or Code.UDINT => tag.GetInt32(offset),
-                Code.LINT or Code.ULINT => tag.GetInt64(offset),
+                Code.INT or Code.UINT or Code.WORD => tag.GetInt16(offset),
+                Code.DINT or Code.UDINT or Code.DWORD => tag.GetInt32(offset),
+                Code.LINT or Code.ULINT or Code.LWORD => tag.GetInt64(offset),
                 Code.REAL => tag.GetFloat32(offset),
                 Code.LREAL => tag.GetFloat64(offset),
                 Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT

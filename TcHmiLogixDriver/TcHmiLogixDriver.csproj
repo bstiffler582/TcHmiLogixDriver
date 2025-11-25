@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
@@ -77,16 +77,18 @@
 		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
-		<AssemblyVersion>0.0.2</AssemblyVersion>
+		<AssemblyVersion>0.0.6</AssemblyVersion>
 		<Version>$(AssemblyVersion)</Version>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
 	  <IsPublishable>False</IsPublishable>
+	  <DebugType>embedded</DebugType>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 	  <IsPublishable>False</IsPublishable>
+	  <DebugType>embedded</DebugType>
 	</PropertyGroup>
 
 </Project>

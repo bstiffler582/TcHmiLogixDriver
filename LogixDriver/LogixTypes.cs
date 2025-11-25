@@ -55,7 +55,7 @@ namespace Logix
             if (IsArray(tagInfo.Type))
             {
                 var baseTypeCode = GetArrayBaseType(tagInfo.Type);
-                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode }, typeCache, readUdtInfo);
+                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode, Dimensions = tagInfo.Dimensions }, typeCache, readUdtInfo);
                 var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
                     .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
                     .ToList();
@@ -93,9 +93,9 @@ namespace Logix
             {
                 Code.BOOL => 1,
                 Code.SINT or Code.USINT => 1,
-                Code.INT or Code.UINT => 2,
-                Code.DINT or Code.UDINT => 4,
-                Code.LINT or Code.ULINT => 8,
+                Code.INT or Code.UINT or Code.WORD => 2,
+                Code.DINT or Code.UDINT or Code.DWORD or Code.TIME => 4,
+                Code.LINT or Code.ULINT or Code.LWORD or Code.DATE_AND_TIME => 8,
                 Code.REAL => 4,
                 Code.LREAL => 8,
                 Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT

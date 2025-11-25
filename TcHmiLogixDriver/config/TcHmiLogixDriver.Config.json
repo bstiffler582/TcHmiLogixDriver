@@ -40,19 +40,14 @@
                   "propertyOrder": 1,
                   "type": "string"
                 },
-                "model": {
+                "controllerInfo": {
                   "propertyOrder": 2,
-                  "type": "string"
-                },
-                "firmware": {
-                  "propertyOrder": 3,
                   "type": "string"
                 }
               },
               "required": [
                 "connectionState",
-                "model",
-                "firmware"
+                "controllerInfo"
               ]
             }
           }

@@ -147,7 +147,7 @@ namespace TcHmiLogixDriver
             {
                 // update diagnostics
                 diagnostics.Targets[driver.Target.Name] =
-                    new TargetDiagnostics(connectionState: "CONNECTED", model: info.Split(' ')[0], info.Split(' ')[2]);
+                    new TargetDiagnostics(connectionState: "CONNECTED", controllerInfo: info);
 
                 // browse tags
                 if (config.tagBrowser)
@@ -173,7 +173,7 @@ namespace TcHmiLogixDriver
             {
                 // update diagnostics
                 diagnostics.Targets[driver.Target.Name] =
-                    new TargetDiagnostics(connectionState: "DISCONNECTED", "", "");
+                    new TargetDiagnostics(connectionState: "DISCONNECTED", "");
 
                 // read tag defintion cache
                 if (!config.tagBrowser && !string.IsNullOrEmpty(config.tagDefinitionCache))

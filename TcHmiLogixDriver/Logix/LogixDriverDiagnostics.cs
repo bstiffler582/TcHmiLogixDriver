@@ -3,7 +3,7 @@ using TcHmiSrv.Core;
 
 namespace TcHmiLogixDriver.Logix
 {
-    record TargetDiagnostics(string connectionState = "CONNECTING...", string model = "", string firmware = "");
+    record TargetDiagnostics(string connectionState = "CONNECTING...", string controllerInfo = "");
     class LogixDriverDiagnostics
     {
         public Dictionary<string, TargetDiagnostics> Targets { get; set; } = new Dictionary<string, TargetDiagnostics>();
@@ -16,8 +16,7 @@ namespace TcHmiLogixDriver.Logix
             {
                 var targetValue = new Value();
                 targetValue.Add("connectionState", target.Value.connectionState);
-                targetValue.Add("model", target.Value.model);
-                targetValue.Add("firmware", target.Value.firmware);
+                targetValue.Add("controllerInfo", target.Value.controllerInfo);
 
                 targets.Add(target.Key, targetValue);
             }

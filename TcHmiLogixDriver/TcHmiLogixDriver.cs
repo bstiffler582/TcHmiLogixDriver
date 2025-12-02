@@ -31,7 +31,7 @@ namespace TcHmiLogixDriver
         private readonly RequestListener requestListener = new();
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
-        private SubscriptionListener subscriptionListener = new();
+        private readonly SubscriptionListener subscriptionListener = new();
 
         private LogixDriverConfig configuration;
         private LogixDriverDiagnostics diagnostics;
@@ -79,7 +79,7 @@ namespace TcHmiLogixDriver
                 }
                 catch (Exception ex) 
                 {
-                    System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
+                    System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
                 }
             }
             connectionStateTimer.Start();
@@ -116,7 +116,7 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
-                System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
+                System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
                 Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
         }
@@ -159,15 +159,6 @@ namespace TcHmiLogixDriver
                     var json = JsonConvert.SerializeObject(tags);
                     TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, cacheConfigPath, json);
                 }
-
-                // re / create symbol
-                if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
-                {
-                    (oldSymbol as LogixSymbol).Dispose();
-                    symbolProvider.Remove(driver.Target.Name);
-                }
-
-                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
             }
             else
             {
@@ -183,11 +174,14 @@ namespace TcHmiLogixDriver
                 }
             }
 
-            // update symbol provider
-            if (symbolProvider.TryGetValue(driver.Target.Name, out var symbol))
-                symbol = new LogixSymbol(driver, requestedSchemas);
-            else
-                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
+            // re / create symbol
+            if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
+            {
+                (oldSymbol as LogixSymbol).Dispose();
+                symbolProvider.Remove(driver.Target.Name);
+            }
+
+            symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
@@ -247,7 +241,7 @@ namespace TcHmiLogixDriver
 
         private void logRequestException(Exception ex)
         {
-            requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}");
+            requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
             if (requestExceptionLog.Count > 250)
                 requestExceptionLog.Dequeue();
         }

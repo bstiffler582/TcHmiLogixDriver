@@ -1,5 +1,5 @@
 using libplctag;
-using System.Net.WebSockets;
+using System.Text.Json;
 using static Logix.LogixTypes;
 
 namespace Logix.Tags
@@ -51,17 +51,29 @@ namespace Logix.Tags
                 case Code.BOOL: 
                     tag.SetBit(offset, (bool)value);
                     break;
-                case Code.SINT or Code.USINT:
+                case Code.SINT:
                     tag.SetInt8(offset, (sbyte)value);
                     break;
-                case Code.INT or Code.UINT:
+                case Code.USINT or Code.BYTE:
+                    tag.SetUInt8(offset, (byte)value);
+                    break;
+                case Code.INT:
                     tag.SetInt16(offset, (short)value);
                     break;
-                case Code.DINT or Code.UDINT:
+                case Code.UINT or Code.WORD:
+                    tag.SetUInt16(offset, (ushort)value);
+                    break;
+                case Code.DINT:
                     tag.SetInt32(offset, (int)value);
                     break;
-                case Code.LINT or Code.ULINT:
+                case Code.UDINT or Code.DWORD:
+                    tag.SetUInt32(offset, (uint)value);
+                    break;
+                case Code.LINT:
                     tag.SetInt64(offset, (long)value);
+                    break;
+                case Code.ULINT or Code.LWORD:
+                    tag.SetUInt64(offset, (ulong)value);
                     break;
                 case Code.REAL:
                     tag.SetFloat32(offset, (float)value);
@@ -73,6 +85,8 @@ namespace Logix.Tags
                     tag.SetString(offset, (string)value);
                     break;
                 default:
+                    var buffer = JsonSerializer.SerializeToUtf8Bytes(value);
+                    tag.SetBuffer(buffer);
                     break;
             }
         }

@@ -40,10 +40,14 @@ namespace TcHmiLogixDriver.Logix
                 return (Code)(definition.Type.Code) switch
                 {
                     Code.BOOL => (bool)ret,
-                    Code.SINT or Code.USINT => (sbyte)ret,
-                    Code.INT or Code.UINT => (short)ret,
-                    Code.DINT or Code.UDINT => (int)ret,
-                    Code.LINT or Code.ULINT => (long)ret,
+                    Code.SINT => (sbyte)ret,
+                    Code.USINT => (byte)ret,
+                    Code.INT => (short)ret,
+                    Code.UINT or Code.WORD => (ushort)ret,
+                    Code.DINT => (int)ret,
+                    Code.UDINT or Code.DWORD => (uint)ret,
+                    Code.LINT => (long)ret,
+                    Code.ULINT or Code.LWORD => (ulong)ret,
                     Code.REAL => (float)ret,
                     Code.LREAL => (double)ret,
                     Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
@@ -84,10 +88,10 @@ namespace TcHmiLogixDriver.Logix
                 object write = (Code)(definition.Type.Code) switch
                 {
                     Code.BOOL => value.GetBool(),
-                    Code.SINT or Code.USINT => value.GetSByte(),
-                    Code.INT or Code.UINT => value.GetInt16(),
-                    Code.DINT or Code.UDINT => value.GetInt32(),
-                    Code.LINT or Code.ULINT => value.GetInt64(),
+                    Code.SINT or Code.USINT or Code.BYTE => value.GetSByte(),
+                    Code.INT or Code.UINT or Code.WORD => value.GetInt16(),
+                    Code.DINT or Code.UDINT or Code.DWORD => value.GetInt32(),
+                    Code.LINT or Code.ULINT or Code.LWORD => value.GetInt64(),
                     Code.REAL => value.GetSingle(),
                     Code.LREAL => value.GetDouble(),
                     Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT

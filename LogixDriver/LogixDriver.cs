@@ -72,7 +72,7 @@ namespace Logix
                 if (ex.Message == EX_ERR_TIMEOUT)
                     isConnected = false;
                 
-                throw new Exception("Tag read exception", ex);
+                throw new Exception($"Tag read exception for ${tagName}", ex);
             }
         }
 

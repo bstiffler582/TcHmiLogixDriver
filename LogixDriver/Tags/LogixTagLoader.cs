@@ -52,9 +52,8 @@ namespace Logix.Tags
                 {
                     // WIP
                     // isolate program / tag names
-                    var programName = selector.Split(':')[1];
-                    var split = programName.Split('.');
-                    var tagName = (split.Length > 1) ? split[1] : null;
+                    var progParts = selector.Substring(selector.IndexOf(':') + 1).Split('.');
+                    var programName = progParts[0];
                 }
 
                 var programTags = tagInfos

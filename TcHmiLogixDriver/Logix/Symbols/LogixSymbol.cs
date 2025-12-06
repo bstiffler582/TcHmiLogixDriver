@@ -3,12 +3,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
-using TcHmiSrv.Core.Listeners;
-using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 
 namespace TcHmiLogixDriver.Logix.Symbols

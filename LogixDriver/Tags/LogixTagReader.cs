@@ -9,7 +9,7 @@ namespace Logix.Tags
         TagInfo[] ReadTagList(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
         TagInfo[] ReadProgramTags(LogixTarget target, string program);
-        Tag GetTag(LogixTarget target, string path, int elements = 1);
+        Tag GetTag(LogixTarget target, string path, int elementCount = 0);
         string ReadControllerInfo(LogixTarget target);
     }
 
@@ -63,7 +63,7 @@ namespace Logix.Tags
             }
         }
 
-        public Tag GetTag(LogixTarget target, string path, int elements = 1)
+        public Tag GetTag(LogixTarget target, string path, int elementCount = 0)
         {
             var tag = new Tag
             {
@@ -72,7 +72,7 @@ namespace Logix.Tags
                 PlcType = target.PlcType,
                 Protocol = target.Protocol,
                 Name = path,
-                ElementCount = Math.Max(elements, 1),
+                ElementCount = Math.Max(elementCount, 1),
                 Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
             };
 

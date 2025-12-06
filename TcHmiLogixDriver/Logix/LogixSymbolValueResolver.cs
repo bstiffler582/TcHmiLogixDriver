@@ -30,7 +30,12 @@ namespace TcHmiLogixDriver.Logix
                 var ret = new Value();
                 var members = new Value();
                 foreach (var m in definition.Type.Members)
-                    members.Add(m.Name, ResolveValue(tag, m, offset + (int)m.Offset));
+                {
+                    if (m.Type.Code == (ushort)Code.BOOL)
+                        members.Add(m.Name, ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset));
+                    else
+                        members.Add(m.Name, ResolveValue(tag, m, offset + (int)m.Offset));
+                }
 
                 return members;
             }
@@ -80,7 +85,10 @@ namespace TcHmiLogixDriver.Logix
                 var members = new Value();
                 foreach (var m in definition.Type.Members)
                 {
-                    WriteTagBuffer(tag, m, value[m.Name], offset + (int)m.Offset);
+                    if (m.Type.Code == (ushort)Code.BOOL)
+                        WriteTagBuffer(tag, m, value[m.Name], offset + (int)m.Offset);
+                    else
+                        WriteTagBuffer(tag, m, value[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
                 }
             }
             else

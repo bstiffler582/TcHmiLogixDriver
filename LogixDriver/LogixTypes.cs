@@ -3,7 +3,7 @@ using libplctag.DataTypes;
 
 namespace Logix
 {
-    public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0);
+    public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0, uint BitOffset = 0);
     public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
 
     public static class LogixTypes
@@ -23,7 +23,7 @@ namespace Logix
             STRING_STRUCT = 0x8FCE
         }
 
-        const ushort TYPE_IS_ARRAY = 0x2000;
+        const ushort TYPE_IS_ARRAY = 0x6000;
         const ushort TYPE_IS_STRUCT = 0x8000;
         const ushort TYPE_IS_SYSTEM = 0x1000;
         const ushort TYPE_UDT_ID_MASK = 0x0FFF;
@@ -50,12 +50,55 @@ namespace Logix
                 return $"UnknownType(0x{typeCode:X4})";
         }
 
+        // TODO:
+        // create records for TagInfo, UdtInfo
+        // create static methods for DecodeTagInfo, DecodeUdtInfo
+        // remove dependency on mapper methods, decode from scratch
+
+        public static TagInfo DecodeTagInfo(Tag tag, out int elementSize, int offset = 0)
+        {
+            /*
+            var tagInstanceId = tag.GetUInt32(offset);
+            var tagType = tag.GetUInt16(offset + 4);
+            var tagLength = tag.GetUInt16(offset + 6);
+            var tagArrayDims = new uint[]
+            {
+                tag.GetUInt32(offset + 8),
+                tag.GetUInt32(offset + 12),
+                tag.GetUInt32(offset + 16)
+            };
+
+            var apparentTagNameLength = (int)tag.GetUInt16(offset + 20);
+            var actualTagNameLength = Math.Min(apparentTagNameLength, TAG_STRING_SIZE * 2 - 1);
+
+            var tagNameBytes = Enumerable.Range(offset + 22, actualTagNameLength)
+                .Select(o => tag.GetUInt8(o))
+                .Select(Convert.ToByte)
+                .ToArray();
+
+            var tagName = Encoding.ASCII.GetString(tagNameBytes);
+
+            elementSize = 22 + actualTagNameLength;
+
+            return new TagInfo()
+            {
+                Id = tagInstanceId,
+                Type = tagType,
+                Name = tagName,
+                Length = tagLength,
+                Dimensions = tagArrayDims
+            };
+            */
+
+            throw new NotImplementedException();
+        }
+
         public static TypeDefinition TypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
         {
             if (IsArray(tagInfo.Type))
             {
                 var baseTypeCode = GetArrayBaseType(tagInfo.Type);
-                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode, Dimensions = tagInfo.Dimensions }, typeCache, readUdtInfo);
+                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode }, typeCache, readUdtInfo);
                 var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
                     .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
                     .ToList();
@@ -69,12 +112,14 @@ namespace Logix
 
                 var udtInfo = readUdtInfo(udtId);
                 var members = udtInfo.Fields
-                    .Select(m => 
-                        new TagDefinition(m.Name, TypeResolver(new TagInfo { Type = m.Type, Dimensions = [m.Metadata] }, typeCache, readUdtInfo), m.Offset)
-                    )
-                    .ToList();
+                    .Select(m =>
+                    {
+                        var memberInfo = new TagInfo { Type = m.Type, Dimensions = IsArray(m.Type) ? [m.Metadata] : [0] };
+                        var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
+                        return new TagDefinition(m.Name, TypeResolver(memberInfo, typeCache, readUdtInfo), m.Offset, (uint)bitOffset);
+                    }).ToList();
 
-                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, tagInfo.Dimensions[0], members);
+                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, 0, members);
 
                 typeCache.Add(udtId, udtDef);
 

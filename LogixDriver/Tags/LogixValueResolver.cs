@@ -114,7 +114,12 @@ namespace Logix.Tags
 
                 var ret = new Dictionary<string, object>();
                 foreach (var m in definition.Type.Members)
-                    ret[m.Name] = ResolveValue(tag, m, offset + (int)m.Offset);
+                {
+                    if (m.Type.Code == (ushort)Code.BOOL)
+                        ret[m.Name] = ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                    else
+                        ret[m.Name] = ResolveValue(tag, m, offset + (int)m.Offset);
+                }
 
                 return ret;
             }
@@ -153,7 +158,10 @@ namespace Logix.Tags
                     var dict = value as IDictionary<string, object>;
                     foreach (var m in definition.Type.Members)
                     {
-                        WriteTagBuffer(tag, m, dict[m.Name], offset + (int)m.Offset);
+                        if (m.Type.Code == (ushort)Code.BOOL)
+                            WriteTagBuffer(tag, m, dict[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                        else
+                            WriteTagBuffer(tag, m, dict[m.Name], offset + (int)m.Offset);
                     }
                 }
             }

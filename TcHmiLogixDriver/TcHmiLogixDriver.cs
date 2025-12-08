@@ -1,10 +1,4 @@
-﻿//-----------------------------------------------------------------------
-// <copyright file="TcHmiLogixDriver.cs" company="Beckhoff Automation GmbH & Co. KG">
-//     Copyright (c) Beckhoff Automation GmbH & Co. KG. All Rights Reserved.
-// </copyright>
-//-----------------------------------------------------------------------
-
-using Logix;
+﻿using Logix;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -42,9 +36,6 @@ namespace TcHmiLogixDriver
 
         private Timer connectionStateTimer;
 
-        // debug
-        private Queue<string> requestExceptionLog = new();
-
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
         {
@@ -71,17 +62,10 @@ namespace TcHmiLogixDriver
         private void onConnectionStateTimerElapsed(object sender, ElapsedEventArgs e)
         {
             var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
-            foreach (var driver in disconnectedDrivers) 
-            {
-                try
-                {
-                    TryConnectDriver(driver);
-                }
-                catch (Exception ex) 
-                {
-                    System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
-                }
-            }
+
+            foreach (var driver in disconnectedDrivers)
+                TryConnectDriver(driver);
+
             connectionStateTimer.Start();
         }
 
@@ -216,17 +200,11 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
-                logRequestException(ex);
-
                 var command = e.Commands.FirstOrDefault();
                 if (command != null)
                 {
                     command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
                     command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
-                }
-                else
-                {
-                    Console.WriteLine("u r cooked: " + ex.ToString(), ErrorValue.HMI_E_EXTENSION);
                 }
             }
         }
@@ -237,13 +215,6 @@ namespace TcHmiLogixDriver
             {
                 (symbol as LogixSymbol).UnsubscribeById(e.Context.SubscriptionId);
             }
-        }
-
-        private void logRequestException(Exception ex)
-        {
-            requestExceptionLog.Enqueue($"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
-            if (requestExceptionLog.Count > 250)
-                requestExceptionLog.Dequeue();
         }
 
         // cleanup
@@ -260,8 +231,6 @@ namespace TcHmiLogixDriver
 
             foreach (var driver in drivers.Values)
                 driver.Dispose();
-
-            System.IO.File.AppendAllLines("requestLog.log", requestExceptionLog);
         }
     }
 }

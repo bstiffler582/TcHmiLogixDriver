@@ -14,7 +14,7 @@
 
 	<PropertyGroup>
 		<Company>Beckhoff USA Community</Company>
-		<Description>A CIP driver for TwinCAT HMI</Description>
+		<Description>An EtherNet/IP driver for TwinCAT HMI</Description>
 		<Copyright></Copyright>
 	</PropertyGroup>
 
@@ -77,8 +77,9 @@
 		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
-		<AssemblyVersion>0.0.7</AssemblyVersion>
+		<AssemblyVersion>0.0.8</AssemblyVersion>
 		<Version>$(AssemblyVersion)</Version>
+		<PackageOutputPath>..\release</PackageOutputPath>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

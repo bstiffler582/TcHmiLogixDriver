@@ -35,7 +35,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             root.Add("properties", properties);
             root.Add("type", "object");
 
-            var extractDefinitions = driver.Target.TagDefinitions.Count > 0;
+            var extractDefinitions = (driver.Target.TagDefinitions.Count > 0);
 
             return new JsonSchemaValue(root, extractDefinitions);
         }

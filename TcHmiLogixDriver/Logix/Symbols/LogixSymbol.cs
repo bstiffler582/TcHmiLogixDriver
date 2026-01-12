@@ -46,7 +46,11 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 mappedSymbolsCount = mappedSymbols.Count();
             }
 
+            if (mappedSymbolsCount == 0 || mappingTree is null)
+                throw new Exception($"No symbols mapped for target {driver.Target.Name}");
+
             // get mapped element list with matching / partial matching path
+
             var match = mappingTree.TryDescend(elements).GetPath().ToList();
 
             if (match.Count() > 0)

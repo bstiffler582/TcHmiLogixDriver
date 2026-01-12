@@ -1,5 +1,7 @@
 ﻿using Logix;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 
@@ -40,88 +42,88 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return new JsonSchemaValue(root, extractDefinitions);
         }
 
+        // Builds type definition and instance schemas for tag browser, and TcHmi framework value resolutions
+        // mutates definitions reference parameter
         private static Value ResolveTypeDefinitionSchema(TagDefinition tag, Value definitions, HashSet<string> cache, string targetName)
         {
-            if (LogixTypes.IsArray(tag.Type.Code))
+            // recurse through nested/complex types (arrays and UDTs)
+            (string typeName, Value schema) InnerResolver(TagDefinition node)
             {
-                // get array base type name
-                var baseTypeName = tag.Type.Members[0].Type.Name;
-
-                // primitive vs UDT type name resolution
-                var itemTypeName = LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) ?
-                    $"#/definitions/{targetName}.{baseTypeName}" :
-                    $"tchmi:general#/definitions/{baseTypeName}";
-
-                // account for if array base type is unresolved udt
-                if (LogixTypes.IsUdt(tag.Type.Members[0].Type.Code) && !cache.Contains(itemTypeName))
+                if (LogixTypes.IsArray(node.Type.Code))
                 {
-                    ResolveTypeDefinitionSchema(tag.Type.Members[0], definitions, cache, targetName);
-                }
+                    if (node.Type.Members is null || node.Type.Members.Count == 0)
+                        throw new Exception($"Array type {node.Name} has no members to infer item type.");
 
-                // array instance definition name
-                var defName = $"{targetName}.ARRAY_0..{tag.Type.Dims - 1}_OF-{baseTypeName}";
+                    var member = node.Type.Members.First();
 
-                if (!cache.Contains(defName))
-                {
-                    var arrayDef = new Value();
-                    arrayDef.Add("type", "array");
-                    var items = new Value();
+                    // build inner item schema and type name
+                    var (innerTypeName, innerSchema) = InnerResolver(member);
 
-                    items.Add("$ref", itemTypeName);
-                    arrayDef.Add("items", items);
+                    var dims = node.Type.Dimensions ?? Array.Empty<uint>();
+                    var currentDim = dims.Length > 0 ? (int)dims[0] : 1;
+                    var arrTypeName = $"ARRAY_0..{currentDim - 1}_OF-{innerTypeName}";
 
-                    arrayDef.Add("maxItems", (int)tag.Type.Dims);
-                    arrayDef.Add("minItems", (int)tag.Type.Dims);
+                    // full definition name
+                    var fullDefName = $"{targetName}.{arrTypeName}";
 
-                    definitions.Add(defName, arrayDef);
-                    cache.Add(defName);
-                }
-
-                return new Value { { "$ref", $"#/definitions/{defName}" } };
-            }
-            else if (LogixTypes.IsUdt(tag.Type.Code) || tag.Name.StartsWith("Program:"))
-            {
-                if (tag.Type.Name == "STRING")
-                    return new Value { { "$ref", "tchmi:general#/definitions/String" } };
-
-                var defName = $"{targetName}.{tag.Type.Name}";
-
-                if (!cache.Contains(defName))
-                {
-                    // resolve UDT type / instance
-                    var udtDef = new Value();
-                    udtDef.Add("type", "object");
-
-                    if (tag.Name.StartsWith("Program:"))
-                        udtDef.Add("allowMapping", false);
-
-                    var udtMembers = new Value();
-
-                    if (tag.Type.Members != null)
+                    if (!cache.Contains(fullDefName))
                     {
-                        foreach (var member in tag.Type.Members)
-                        {
-                            // causes schema mismatch when writing UDTs
-                            //if (member.Name.StartsWith("ZZZZZZZZZZ"))
-                            //    continue;
+                        var arrayDef = new Value();
 
-                            var memberDef = ResolveTypeDefinitionSchema(member, definitions, cache, targetName);
-                            udtMembers.Add(member.Name, memberDef);
-                        }
+                        arrayDef.Add("type", "array");
+                        arrayDef.Add("items", innerSchema);
+                        arrayDef.Add("maxItems", currentDim);
+                        arrayDef.Add("minItems", currentDim);
+
+                        definitions.Add(fullDefName, arrayDef);
+                        cache.Add(fullDefName);
                     }
 
-                    udtDef.Add("properties", udtMembers);
-                    definitions.Add(defName, udtDef);
-                    cache.Add(defName);
+                    return (arrTypeName, new Value { { "$ref", $"#/definitions/{fullDefName}" } });
                 }
+                else if (LogixTypes.IsUdt(node.Type.Code) || node.Name.StartsWith("Program:"))
+                {
+                    if (node.Type.Name == "STRING")
+                        return ("String", new Value { { "$ref", "tchmi:general#/definitions/String" } });
 
-                return new Value { { "$ref", $"#/definitions/{defName}" } };
+                    var defName = $"{targetName}.{node.Type.Name}";
+
+                    if (!cache.Contains(defName))
+                    {
+                        var udtDef = new Value();
+                        udtDef.Add("type", "object");
+
+                        if (node.Name.StartsWith("Program:"))
+                            udtDef.Add("allowMapping", false);
+
+                        var udtMembers = new Value();
+
+                        if (node.Type.Members != null)
+                        {
+                            foreach (var member in node.Type.Members)
+                            {
+                                var (_, memberSchema) = InnerResolver(member);
+                                udtMembers.Add(member.Name, memberSchema);
+                            }
+                        }
+
+                        udtDef.Add("properties", udtMembers);
+                        definitions.Add(defName, udtDef);
+                        cache.Add(defName);
+                    }
+
+                    return (node.Type.Name, new Value { { "$ref", $"#/definitions/{defName}" } });
+                }
+                else
+                {
+                    // primitive type
+                    var primName = node.Type.Name;
+                    return (primName, new Value { { "$ref", $"tchmi:general#/definitions/{primName}" } });
+                }
             }
-            else
-            {
-                // primitive type
-                return new Value { { "$ref", $"tchmi:general#/definitions/{tag.Type.Name}" } };
-            }
+
+            var result = InnerResolver(tag);
+            return result.schema;
         }
     }
 }

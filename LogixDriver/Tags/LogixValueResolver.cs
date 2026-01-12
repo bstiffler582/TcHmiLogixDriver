@@ -1,4 +1,5 @@
 using libplctag;
+using System.Collections;
 using System.Text.Json;
 using static Logix.LogixTypes;
 
@@ -85,9 +86,7 @@ namespace Logix.Tags
                     tag.SetString(offset, (string)value);
                     break;
                 default:
-                    var buffer = JsonSerializer.SerializeToUtf8Bytes(value);
-                    tag.SetBuffer(buffer);
-                    break;
+                    throw new Exception($"No primitive type resolver for TypeCode {typeCode}");
             }
         }
     }
@@ -138,7 +137,8 @@ namespace Logix.Tags
 
                 if (value.GetType() == typeof(IEnumerable<>))
                 {
-                    var arr = (value as IEnumerable<object>).ToArray();
+                    var arr = (value as IEnumerable<object>)?.ToArray();
+                    if (arr is null) throw new Exception($"Unable to cast write value for array tag {tag.Name} to Enumerable.");
                     foreach (var m in definition.Type.Members)
                     {
                         {
@@ -156,6 +156,7 @@ namespace Logix.Tags
                 if (value.GetType() == typeof(IDictionary<string, object>))
                 {
                     var dict = value as IDictionary<string, object>;
+                    if (dict is null) throw new Exception($"Unable to cast write value for tag {tag.Name} to Dictionary.");
                     foreach (var m in definition.Type.Members)
                     {
                         if (m.Type.Code == (ushort)Code.BOOL)

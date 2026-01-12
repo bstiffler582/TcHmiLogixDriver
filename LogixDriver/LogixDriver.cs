@@ -34,30 +34,58 @@ namespace Logix
             return tags;
         }
 
-        /// <summary>
-        /// Reads a PLC tag by name
-        /// </summary>
-        /// <param name="tagName"></param>
-        /// <returns>Type dictated by tag definition and ValueResolver</returns>
-        /// <exception cref="Exception"></exception>
-        public object ReadTagValue(string tagName)
+        private (TagDefinition, Tag) GetTag(string tagName)
         {
             var definition = Target.TryGetTagDefinition(tagName);
             if (definition is null)
                 throw new Exception("Tag definition not found.");
 
-            // check if subscribed
-            var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
-            if (subscribedTag is not null && !isStale)
-                return ValueResolver.ResolveValue(subscribedTag, definition);
+            if (!tagCache.TryGetValue(tagName, out var tag))
+            {
+                if (definition.Type.IsArray())
+                {
+                    var readPath = ResolveArrayPath(tagName, definition);
+                    tag = TagReader.CreateTag(Target, readPath, definition.Type.ElementCount());
+                }
+                else
+                {
+                    tag = TagReader.CreateTag(Target, tagName, 1);
+                }
+                tagCache.Add(tagName, tag);
+            }
 
+            return (definition, tag);
+        }
+
+        private string ResolveArrayPath(string tagName, TagDefinition definition)
+        {
+            var member = definition;
+            var path = tagName;
+            while (member is not null && member.Type.IsArray())
+            {
+                path += "[0]";
+                member = member.Type.Members?.First();
+            }
+
+            return path;
+        }
+
+        /// <summary>
+        /// Reads a PLC tag by name
+        /// </summary>
+        /// <param name="tagName"></param>
+        /// <returns>Tag value as object</returns>
+        /// <exception cref="Exception"></exception>
+        public object ReadTagValue(string tagName)
+        {
             try
             {
-                if (!tagCache.TryGetValue(tagName, out var tag))
-                {
-                    tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
-                    tagCache.Add(tagName, tag);
-                }
+                var (definition, tag) = GetTag(tagName);
+
+                // check if subscribed
+                var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
+                if (subscribedTag is not null && !isStale)
+                    return ValueResolver.ResolveValue(subscribedTag, definition);
 
                 // wait for subscription reads
                 if (subscription.Busy)
@@ -78,17 +106,9 @@ namespace Logix
 
         public void WriteTagValue(string tagName, object value)
         {
-            var definition = Target.TryGetTagDefinition(tagName);
-            if (definition is null)
-                throw new Exception("Tag definition not found.");
-
             try
             {
-                if (!tagCache.TryGetValue(tagName, out var tag))
-                {
-                    tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
-                    tagCache.Add(tagName, tag);
-                }
+                var (definition, tag) = GetTag(tagName);
 
                 if (!tag.IsInitialized)
                     tag.Initialize();
@@ -126,15 +146,10 @@ namespace Logix
 
         public void SubscribeTag(string tagName)
         {
-            var definition = Target.TryGetTagDefinition(tagName);
-            if (definition is null)
-                throw new Exception("Tag definition not found.");
+            var (definition, tag) = GetTag(tagName);
 
             if (!subscription.IsTagSubscribed(tagName))
-            {
-                var tag = TagReader.GetTag(Target, tagName, (int)definition.Type.Dims);
                 subscription.SubscribeTag(tag);
-            }
         }
 
         public void UnsubscribeTag(string tagName)

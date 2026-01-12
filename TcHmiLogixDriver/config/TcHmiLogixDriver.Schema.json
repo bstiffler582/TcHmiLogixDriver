@@ -25,9 +25,9 @@
           "description": "Use online tag browser",
           "default": false
         },
-        "tagFilterSelector": {
+        "tagProgramFilter": {
           "type": "string",
-          "description": "Filter tag browser with selector",
+          "description": "Filter the tag browser to only show tags from a certain program (e.g. 'Program:HMI'). A value of '*' or '' loads all program and controller tags.",
           "default": "*"
         },
         "tagDefinitionCache": {

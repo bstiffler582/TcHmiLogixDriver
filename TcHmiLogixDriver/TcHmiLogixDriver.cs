@@ -136,7 +136,7 @@ namespace TcHmiLogixDriver
                 // browse tags
                 if (config.tagBrowser)
                 {
-                    var tags = driver.LoadTags(config.tagFilterSelector);
+                    var tags = driver.LoadTags(config.tagProgramFilter);
 
                     // cache tags
                     var cacheConfigPath = $"Targets::{driver.Target.Name}::tagDefinitionCache";
@@ -178,8 +178,9 @@ namespace TcHmiLogixDriver
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
                 // store requested schema paths - maybe there is a better way to retrieved mapped symbols?
-                if (commands.First().Name == "TcHmiLogixDriver.GetSchema")
-                    requestedSchemas.Add(commands.First().WriteValue);
+                foreach (var cmd in commands.Where(c => c.Mapping == "GetSchema"))
+                    requestedSchemas.Add(cmd.WriteValue);
+
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
                 {

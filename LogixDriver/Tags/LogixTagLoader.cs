@@ -40,7 +40,7 @@ namespace Logix.Tags
                             .Where(t => !LogixTypes.ResolveTypeName(t.Type).Contains("SystemType"))
                             .Select(tag => new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader)))
                             .ToList();
-                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, 0, progTags));
+                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
                     })
                     .ToList();
 
@@ -65,7 +65,7 @@ namespace Logix.Tags
                             .Where(t => !LogixTypes.ResolveTypeName(t.Type).Contains("SystemType"))
                             .Select(tag => new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader)))
                             .ToList();
-                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, 0, progTags));
+                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
                     })
                     .ToList();
 

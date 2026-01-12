@@ -17,7 +17,13 @@ foreach (var def in target.TagDefinitionsFlat)
 var info = driver.ReadControllerInfo();
 Console.WriteLine(info);
 
-//var res = driver.ReadTagValue("ctrlrDint");
-//Console.WriteLine(res);
+// 2D:
+// when reading root (e.g. arr2D), need to set tag elementcount to total elements (dim * dim)
+// when reading sub-elements (e.g. arr2D[1]), need to read from 0th child element (arr2D[1][0]) and set element count to 5
+// when reading inner-most element, works appropriately
+
+//var res = driver.ReadTagValue("Program:MainProgram.arr2D[1][2]");
+var res = driver.ReadTagValue("structArray");
+Console.WriteLine(res);
 
 //driver.WriteTagValue("ctrlrDint", 25);

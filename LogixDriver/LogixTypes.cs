@@ -4,7 +4,22 @@ using libplctag.DataTypes;
 namespace Logix
 {
     public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0, uint BitOffset = 0);
-    public record TypeDefinition(ushort Code, uint Length, string Name = "", uint Dims = 0, List<TagDefinition>? Members = null);
+    public record TypeDefinition(ushort Code, uint Length, string Name = "", uint[]? Dimensions = null, List<TagDefinition>? Members = null)
+    {
+        public int ElementCount()
+        {
+            if (Dimensions is null || Dimensions.Length == 0) return 1;
+            long prod = 1;
+            foreach (var d in Dimensions)
+                prod = prod * Math.Max(1, (long)d);
+            return (int)Math.Max(1, prod);
+        }
+
+        public bool IsArray()
+        {
+            return LogixTypes.IsArray(Code);
+        }
+    }
 
     public static class LogixTypes
     {
@@ -55,7 +70,7 @@ namespace Logix
         // create static methods for DecodeTagInfo, DecodeUdtInfo
         // remove dependency on mapper methods, decode from scratch
 
-        public static TagInfo DecodeTagInfo(Tag tag, out int elementSize, int offset = 0)
+        private static TagInfo DecodeTagInfo(Tag tag, out int elementSize, int offset = 0)
         {
             /*
             var tagInstanceId = tag.GetUInt32(offset);
@@ -97,12 +112,32 @@ namespace Logix
         {
             if (IsArray(tagInfo.Type))
             {
+                // base element type
                 var baseTypeCode = GetArrayBaseType(tagInfo.Type);
                 var baseType = TypeResolver(new TagInfo { Type = baseTypeCode }, typeCache, readUdtInfo);
-                var members = Enumerable.Range(0, (int)tagInfo.Dimensions[0])
-                    .Select(index => new TagDefinition($"{index}", baseType, (uint)index * baseType.Length))
-                    .ToList();
-                return new TypeDefinition(tagInfo.Type, tagInfo.Dimensions[0] * baseType.Length, $"ARRAY OF {baseType.Name}", tagInfo.Dimensions[0], members);
+
+                // build n-dimension array definition
+                var dims = tagInfo.Dimensions.Where(n => n > 0).ToArray();
+                TypeDefinition BuildArray(int idx = 0)
+                {
+                    if (idx >= dims.Length || dims[idx] == 0)
+                        return baseType;
+
+                    var child = BuildArray(idx + 1);
+
+                    var dim = (int)dims[idx];
+                    var members = Enumerable.Range(0, dim)
+                        .Select(i => new TagDefinition($"{i}", child, (uint)i * child.Length))
+                        .ToList();
+
+                    var arrayName = $"ARRAY[{dim}] OF {child.Name}";
+                    var arrayLength = (uint)dim * child.Length;
+                    var subDims = dims.Skip(idx).ToArray();
+
+                    return new TypeDefinition(tagInfo.Type, arrayLength, arrayName, subDims, members);
+                }
+
+                return BuildArray();
             }
             else if (IsUdt(tagInfo.Type))
             {
@@ -119,7 +154,7 @@ namespace Logix
                         return new TagDefinition(m.Name, TypeResolver(memberInfo, typeCache, readUdtInfo), m.Offset, (uint)bitOffset);
                     }).ToList();
 
-                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, 0, members);
+                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, Array.Empty<uint>(), members);
 
                 typeCache.Add(udtId, udtDef);
 

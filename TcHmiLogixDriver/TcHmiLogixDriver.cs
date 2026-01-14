@@ -9,9 +9,6 @@ using TcHmiLogixDriver.Logix.Symbols;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.General;
 using TcHmiSrv.Core.Listeners;
-using TcHmiSrv.Core.Listeners.ConfigListenerEventArgs;
-using TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs;
-using TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 using TcHmiSrv.Core.Tools.Json.Extensions;
 using TcHmiSrv.Core.Tools.Json.Newtonsoft;
@@ -31,7 +28,6 @@ namespace TcHmiLogixDriver
         private LogixDriverDiagnostics diagnostics;
 
         private DynamicSymbolsProvider symbolProvider;
-        private HashSet<string> requestedSchemas = new();
         private Dictionary<string, LogixDriver> drivers;
 
         private Timer connectionStateTimer;
@@ -66,11 +62,36 @@ namespace TcHmiLogixDriver
             foreach (var driver in disconnectedDrivers)
                 TryConnectDriver(driver);
 
+            UpdateMappedSymbolList();
+
             connectionStateTimer.Start();
         }
 
+        // request mapped symbol list from TcHmiSrv
+        private void UpdateMappedSymbolList()
+        {
+            if (symbolProvider is null || symbolProvider.Values.Count < 1)
+                return;
+
+            var context = TcHmiApplication.Context;
+            var command = new Command("ListSymbols");
+            var result = TcHmiApplication.AsyncHost.Execute(ref context, ref command);
+
+            if (result != ErrorValue.HMI_SUCCESS)
+                return;
+
+            var domainSymbolNames = command.ReadValue.Keys
+                .Where(s => s.StartsWith(context.Domain));
+
+            foreach (var symbol in symbolProvider)
+            {
+                var targetSymbolNames = domainSymbolNames.Where(s => s.Contains(symbol.Key));
+                (symbol.Value as LogixSymbol).SetMappedSymbols(targetSymbolNames);
+            }
+        }
+
         // update configuration
-        private void onConfigChange(object sender, OnChangeEventArgs e)
+        private void onConfigChange(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
@@ -165,7 +186,7 @@ namespace TcHmiLogixDriver
                 symbolProvider.Remove(driver.Target.Name);
             }
 
-            symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver, requestedSchemas));
+            symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver));
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
@@ -176,11 +197,6 @@ namespace TcHmiLogixDriver
             try
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-
-                // store requested schema paths - maybe there is a better way to retrieved mapped symbols?
-                foreach (var cmd in commands.Where(c => c.Mapping == "GetSchema"))
-                    requestedSchemas.Add(cmd.WriteValue);
-
 
                 foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
                 {
@@ -210,8 +226,10 @@ namespace TcHmiLogixDriver
             }
         }
 
-        private void onUnsubscribe(object sender, OnUnsubscribeEventArgs e)
+        private void onUnsubscribe(object sender, TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs.OnUnsubscribeEventArgs e)
         {
+            if (symbolProvider is null || symbolProvider.Values.Count < 1) return;
+
             foreach (var symbol in symbolProvider.Values)
             {
                 (symbol as LogixSymbol).UnsubscribeById(e.Context.SubscriptionId);
@@ -219,7 +237,7 @@ namespace TcHmiLogixDriver
         }
 
         // cleanup
-        private void onShutDown(object sender, OnShutdownEventArgs e)
+        private void onShutDown(object sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
             requestListener.OnRequest -= onRequest;
             configListener.OnChange -= onConfigChange;

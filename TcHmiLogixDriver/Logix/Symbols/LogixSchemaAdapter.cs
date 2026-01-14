@@ -43,7 +43,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         }
 
         // Builds type definition and instance schemas for tag browser, and TcHmi framework value resolutions
-        // mutates definitions reference parameter
+        // mutates definitions and cache reference parameters
         private static Value ResolveTypeDefinitionSchema(TagDefinition tag, Value definitions, HashSet<string> cache, string targetName)
         {
             // recurse through nested/complex types (arrays and UDTs)

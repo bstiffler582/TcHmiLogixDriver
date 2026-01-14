@@ -86,7 +86,7 @@ namespace Logix.Tags
                     // read tags
                     foreach (var subscribed in subscribedTags.Values)
                     {
-                        subscribed.Tag.Read();
+                        await subscribed.Tag.ReadAsync();
                         subscribed.ClearStale();
                     }
 

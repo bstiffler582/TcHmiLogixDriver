@@ -73,7 +73,7 @@
           "StrictConfigListenerFilter"
         ]
       },
-      "description": "StrictPropertyValidation: when not set functions without writeValue will accept any input\nStrictConfigListenerFilter: when multiple config values are changed at once, pass only those configuration values to the config listener of the corresponding server extension that match the specified filter; otherwise, all changed configuration values are passed to the config listener of the corresponding server extension if any of them matches the specified filter."
+      "description": "StrictPropertyValidation: when not set, functions without writeValue will accept any input\nStrictConfigListenerFilter: when multiple config values are changed at once, pass only those configuration values to the config listener of the corresponding server extension that match the specified filter; otherwise, all changed configuration values are passed to the config listener of the corresponding server extension if any of them matches the specified filter."
     },
     "guid": {
       "type": "string"

@@ -13,16 +13,13 @@ namespace TcHmiLogixDriver.Logix.Symbols
     public class LogixSymbol : Symbol, IDisposable
     {
         private LogixDriver driver;
-        private IEnumerable<string> mappedSymbols;
-        private int mappedSymbolsCount = 0;
         private LookupTrie<string> mappingTree;
-        private ConcurrentDictionary<uint, List<string>> subscriptionSymbols = new();
+        private ConcurrentDictionary<uint, HashSet<string>> subscriptionSymbols = new();
 
-        public LogixSymbol(LogixDriver driver, IEnumerable<string> mappedSymbols) 
+        public LogixSymbol(LogixDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
         {
             this.driver = driver;
-            this.mappedSymbols = mappedSymbols;
             driver.ValueResolver = new LogixSymbolValueResolver();
         }
 
@@ -38,22 +35,14 @@ namespace TcHmiLogixDriver.Logix.Symbols
         {
             if (!driver.IsConnected)
                 throw new Exception($"No connection to target: {driver.Target.Name}");
-            
-            // rebuild the symbol mapping tree if new symbols are found
-            if (mappedSymbols.Count() != mappedSymbolsCount)
-            {
-                mappingTree = BuildMappingTree(mappedSymbols.Where(s => s.StartsWith(driver.Target.Name)));
-                mappedSymbolsCount = mappedSymbols.Count();
-            }
 
-            if (mappedSymbolsCount == 0 || mappingTree is null)
+            if (mappingTree is null)
                 throw new Exception($"No symbols mapped for target {driver.Target.Name}");
 
             // get mapped element list with matching / partial matching path
-
             var match = mappingTree.TryDescend(elements).GetPath().ToList();
 
-            if (match.Count() > 0)
+            if (match.Count > 0)
             {
                 elements.Dequeue();
 
@@ -65,8 +54,8 @@ namespace TcHmiLogixDriver.Logix.Symbols
                         acc += $".{s}";
                 });
 
-                AddSymbolSubscription(context.SubscriptionId, tagName);
                 var readValue = driver.ReadTagValue(tagName) as Value;
+                AddSymbolSubscription(context.SubscriptionId, tagName);
 
                 // generate return value
                 while (elements.Count > 0)
@@ -81,7 +70,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             }
             else
             {
-                throw new Exception($"Requested symbol path: {string.Join("::", elements)} not found in map tree.");
+                throw new Exception($"Requested symbol path: {string.Join(".", elements)} not found in map tree.");
             }
         }
 
@@ -100,6 +89,15 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return value;
         }
 
+        public void SetMappedSymbols(IEnumerable<string> symbolNames)
+        {
+            var symbols = symbolNames.ToList();
+            if (symbols.Count > 0)
+            {
+                mappingTree = BuildMappingTree(symbols);
+            }
+        }
+
         // manage read subscriptions
         private void AddSymbolSubscription(uint subscriptionId, string symbol)
         {
@@ -108,7 +106,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             if (subscriptionSymbols.ContainsKey(subscriptionId))
                 subscriptionSymbols[subscriptionId].Add(symbol);
             else
-                subscriptionSymbols.TryAdd(subscriptionId, new List<string>() { symbol });
+                subscriptionSymbols.TryAdd(subscriptionId, new HashSet<string>() { symbol });
         }
 
         public void UnsubscribeById(uint subscriptionId)
@@ -128,7 +126,8 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
             foreach (var symbol in symbols)
             {
-                var path = TcHmiApplication.SplitSymbolPath(symbol, StringSplitOptions.RemoveEmptyEntries).Skip(1);
+                // skip extension and target name
+                var path = symbol.Split('.').Skip(2);
                 tree.AddPath(path);
             }
 

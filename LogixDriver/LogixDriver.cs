@@ -12,7 +12,7 @@ namespace Logix
 
         public readonly LogixTarget Target;
         private Dictionary<string, Tag> tagCache = new();
-        private LogixTagSubscription subscription;
+        private LogixTagSubscription? subscription;
         private volatile bool isConnected = false;
 
         private const string EX_ERR_TIMEOUT = "ErrorTimeout";
@@ -20,7 +20,6 @@ namespace Logix
         public LogixDriver(LogixTarget target)
         {
             Target = target;
-            subscription = new LogixTagSubscription(this, 500);
         }
 
         /// <summary>
@@ -70,6 +69,23 @@ namespace Logix
             return path;
         }
 
+        protected void SetConnectionState(bool isConnected)
+        {
+            // rather than throw the subscription out, should we just stop/restart the timer?
+            if (isConnected)
+            {
+                this.isConnected = true;
+                if (subscription is null)
+                    subscription = new LogixTagSubscription(this, 500);
+            }
+            else
+            {
+                this.isConnected = false;
+                subscription?.Dispose();
+                subscription = null;
+            }
+        }
+
         /// <summary>
         /// Reads a PLC tag by name
         /// </summary>
@@ -83,13 +99,16 @@ namespace Logix
                 var (definition, tag) = GetTag(tagName);
 
                 // check if subscribed
-                var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
-                if (subscribedTag is not null && !isStale)
-                    return ValueResolver.ResolveValue(subscribedTag, definition);
+                if (subscription is not null)
+                {
+                    var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
+                    if (subscribedTag is not null && !isStale)
+                        return ValueResolver.ResolveValue(subscribedTag, definition);
 
-                // wait for subscription reads
-                if (subscription.Busy)
-                    subscription.WaitUntilIdle();
+                    // wait for subscription reads
+                    if (subscription.Busy)
+                        subscription.WaitUntilIdle();
+                }
 
                 tag.Read();
 
@@ -98,7 +117,7 @@ namespace Logix
             catch (Exception ex)
             {
                 if (ex.Message == EX_ERR_TIMEOUT)
-                    isConnected = false;
+                    SetConnectionState(false);
                 
                 throw new Exception($"Error reading tag {tagName}", ex);
             }
@@ -120,7 +139,7 @@ namespace Logix
             catch (Exception ex)
             {
                 if (ex.Message == EX_ERR_TIMEOUT)
-                    isConnected = false;
+                    SetConnectionState(false);
 
                 throw new Exception($"Error writing tag {tagName}", ex);
             }
@@ -132,12 +151,12 @@ namespace Logix
             try
             {
                 info = TagReader.ReadControllerInfo(Target);
-                isConnected = true;
+                SetConnectionState(true);
             }
             catch (Exception ex)
             {
                 if (ex.Message == EX_ERR_TIMEOUT)
-                    isConnected = false;
+                    SetConnectionState(false);
                 else
                     throw new Exception("Tag read exception.", ex);
             }
@@ -146,21 +165,24 @@ namespace Logix
 
         public void SubscribeTag(string tagName)
         {
+            if (subscription is null) return;
+
             var (definition, tag) = GetTag(tagName);
 
             if (!subscription.IsTagSubscribed(tagName))
-                subscription.SubscribeTag(tag);
+                subscription.SubscribeTag(tagName, tag);
         }
 
         public void UnsubscribeTag(string tagName)
         {
+            if (subscription is null) return;
             subscription.UnsubscribeTag(tagName);
         }
 
         public void UnsubscribeTags(IEnumerable<string> tagNames)
         {
             foreach (var tagName in tagNames)
-                subscription.UnsubscribeTag(tagName);
+                UnsubscribeTag(tagName);
         }
 
         public void Dispose()
@@ -168,7 +190,8 @@ namespace Logix
             foreach (var tag in tagCache.Values)
                 tag.Dispose();
 
-            subscription.Dispose();
+            if (subscription is not null)
+                subscription.Dispose();
         }
     }
 }

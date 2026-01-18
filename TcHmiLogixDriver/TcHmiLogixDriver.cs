@@ -57,13 +57,17 @@ namespace TcHmiLogixDriver
         // target connection state management
         private void onConnectionStateTimerElapsed(object sender, ElapsedEventArgs e)
         {
-            var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
+            try
+            {
+                var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
 
-            foreach (var driver in disconnectedDrivers)
-                TryConnectDriver(driver);
+                foreach (var driver in disconnectedDrivers)
+                    TryConnectDriver(driver);
 
-            UpdateMappedSymbolList();
-
+                UpdateMappedSymbolList();
+            }
+            catch (Exception ex) { }
+            
             connectionStateTimer.Start();
         }
 

@@ -24,7 +24,7 @@ namespace Logix.Tags
             subscriptionTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(rateMs));
         }
 
-        public void SubscribeTag(Tag tag)
+        public void SubscribeTag(string tagName, Tag tag)
         {
             if (subscriptionProcess is null)
             {
@@ -32,10 +32,10 @@ namespace Logix.Tags
                 subscriptionProcess = Task.Run(() => ProcessSubscriptionReads(subscriptionCts.Token));
             }
 
-            if (!subscribedTags.ContainsKey(tag.Name))
+            if (!subscribedTags.ContainsKey(tagName))
             {
                 var subscribedTag = new SubscribedTag(tag);
-                subscribedTags.TryAdd(tag.Name, subscribedTag);
+                subscribedTags.TryAdd(tagName, subscribedTag);
             }
         }
 
@@ -66,50 +66,55 @@ namespace Logix.Tags
         // subscription read loop
         private async void ProcessSubscriptionReads(CancellationToken cancel)
         {
-            while (await subscriptionTimer.WaitForNextTickAsync(cancel))
+            try
             {
-                // set all stale
-                foreach (var stale in subscribedTags.Values)
-                    stale.SetStale();
-
-                // prevent re-entry
-                if (Interlocked.Exchange(ref isSubscriptionProcessing, 1) == 1)
-                    return;
-
-                // set busy
-                idleTask = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                if (!driver.IsConnected) return;
-
-                try
+                while (await subscriptionTimer.WaitForNextTickAsync(cancel))
                 {
-                    // read tags
-                    foreach (var subscribed in subscribedTags.Values)
+                    // set all stale
+                    foreach (var stale in subscribedTags.Values)
+                        stale.SetStale();
+
+                    if (!driver.IsConnected) return;
+
+                    // prevent re-entry
+                    if (Interlocked.Exchange(ref isSubscriptionProcessing, 1) == 1)
+                        return;
+
+                    // set busy
+                    idleTask = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                    try
                     {
-                        await subscribed.Tag.ReadAsync();
-                        subscribed.ClearStale();
-                    }
+                        // read tags
+                        foreach (var subscribed in subscribedTags.Values)
+                        {
+                            await subscribed.Tag.ReadAsync(cancel);
+                            subscribed.ClearStale();
+                        }
 
-                }
-                catch (Exception ex)
-                {
-                    // timeout exception on disconnect
-                    Console.WriteLine(ex.ToString());
-                }
-                finally
-                {
-                    // allow re-entry
-                    Interlocked.Exchange(ref isSubscriptionProcessing, 0);
-                    idleTask.TrySetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        // timeout exception on disconnect
+                        Console.WriteLine(ex.ToString());
+                    }
+                    finally
+                    {
+                        // allow re-entry
+                        Interlocked.Exchange(ref isSubscriptionProcessing, 0);
+                        idleTask.TrySetResult();
+                    }
                 }
             }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+            {
+                // Expected shutdown
+            }
+
         }
 
         public void Dispose()
         {
-            foreach (var subscribed in subscribedTags.Values)
-                subscribed.Tag.Dispose();
-
             subscriptionCts?.Cancel();
             subscriptionTimer.Dispose();
         }

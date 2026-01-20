@@ -3,14 +3,14 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
-using TcHmiSrv.Core.General;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
-    public class LogixSymbol : Symbol, IDisposable
+    public class LogixSymbol : AsyncSymbol, IDisposable
     {
         private LogixDriver driver;
         private LookupTrie<string> mappingTree;
@@ -31,7 +31,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// <param name="elements">Queue that represents requested symbol path</param>
         /// <param name="context"></param>
         /// <returns>Resolved TcHmi Value</returns>
-        protected override Value Read(Queue<string> elements, Context context)
+        protected async override Task<Value> ReadAsync(Queue<string> elements, Context context)
         {
             if (!driver.IsConnected)
                 throw new Exception($"No connection to target: {driver.Target.Name}");
@@ -54,8 +54,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
                         acc += $".{s}";
                 });
 
-                var readValue = driver.ReadTagValue(tagName) as Value;
-                AddSymbolSubscription(context.SubscriptionId, tagName);
+                var readValue = await driver.ReadTagValueAsync(tagName) as Value;
 
                 // generate return value
                 while (elements.Count > 0)
@@ -74,7 +73,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             }
         }
 
-        protected override Value Write(Queue<string> elements, Value value, Context context)
+        protected async override Task<Value> WriteAsync(Queue<string> elements, Value value, Context context)
         {
             // build tag string
             string tagName = elements.Dequeue();
@@ -84,7 +83,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
                     $"[{element}]" : $".{element}";
             }
 
-            driver.WriteTagValue(tagName, value);
+            await driver.WriteTagValueAsync(tagName, value);
 
             return value;
         }
@@ -95,26 +94,6 @@ namespace TcHmiLogixDriver.Logix.Symbols
             if (symbols.Count > 0)
             {
                 mappingTree = BuildMappingTree(symbols);
-            }
-        }
-
-        // manage read subscriptions
-        private void AddSymbolSubscription(uint subscriptionId, string symbol)
-        {
-            driver.SubscribeTag(symbol);
-
-            if (subscriptionSymbols.ContainsKey(subscriptionId))
-                subscriptionSymbols[subscriptionId].Add(symbol);
-            else
-                subscriptionSymbols.TryAdd(subscriptionId, new HashSet<string>() { symbol });
-        }
-
-        public void UnsubscribeById(uint subscriptionId)
-        {
-            if (subscriptionSymbols.TryGetValue(subscriptionId, out var symbols))
-            {
-                driver.UnsubscribeTags(symbols);
-                subscriptionSymbols.Remove(subscriptionId, out _);
             }
         }
 
@@ -132,11 +111,6 @@ namespace TcHmiLogixDriver.Logix.Symbols
             }
 
             return tree;
-        }
-
-        public void Dispose()
-        {
-            //subscriptionListener.OnUnsubscribe -= onUnsubscribe;
         }
     }
 }

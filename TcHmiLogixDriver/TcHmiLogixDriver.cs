@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Timers;
 using TcHmiLogixDriver.Logix;
 using TcHmiLogixDriver.Logix.Symbols;
@@ -22,7 +23,6 @@ namespace TcHmiLogixDriver
         private readonly RequestListener requestListener = new();
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
-        private readonly SubscriptionListener subscriptionListener = new();
 
         private LogixDriverConfig configuration;
         private LogixDriverDiagnostics diagnostics;
@@ -38,10 +38,9 @@ namespace TcHmiLogixDriver
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
 
             // server event handling
-            requestListener.OnRequest += onRequest;
+            requestListener.OnRequestAsync += onRequestAsync;
             configListener.OnChange += onConfigChange;
             shutdownListener.OnShutdown += onShutDown;
-            subscriptionListener.OnUnsubscribe += onUnsubscribe;
 
             // target connection state management
             connectionStateTimer = new Timer(5000);
@@ -194,7 +193,7 @@ namespace TcHmiLogixDriver
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
-        private void onRequest(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
+        private async Task onRequestAsync(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
             var commands = e.Commands;
 
@@ -202,7 +201,7 @@ namespace TcHmiLogixDriver
             {
                 e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
 
-                foreach (var command in symbolProvider.HandleCommands(e.Commands, e.Context))
+                foreach (var command in await symbolProvider.HandleCommandsAsync(e.Commands, e.Context))
                 {
                     // Use the mapping to check which command is requested
                     switch (command.Mapping)
@@ -230,23 +229,12 @@ namespace TcHmiLogixDriver
             }
         }
 
-        private void onUnsubscribe(object sender, TcHmiSrv.Core.Listeners.SubscriptionListenerEventArgs.OnUnsubscribeEventArgs e)
-        {
-            if (symbolProvider is null || symbolProvider.Values.Count < 1) return;
-
-            foreach (var symbol in symbolProvider.Values)
-            {
-                (symbol as LogixSymbol).UnsubscribeById(e.Context.SubscriptionId);
-            }
-        }
-
         // cleanup
         private void onShutDown(object sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
-            requestListener.OnRequest -= onRequest;
+            requestListener.OnRequestAsync -= onRequestAsync;
             configListener.OnChange -= onConfigChange;
             shutdownListener.OnShutdown -= onShutDown;
-            subscriptionListener.OnUnsubscribe -= onUnsubscribe;
 
             connectionStateTimer.Stop();
             connectionStateTimer.Elapsed -= onConnectionStateTimerElapsed;

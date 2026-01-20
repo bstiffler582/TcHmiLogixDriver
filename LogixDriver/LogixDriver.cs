@@ -12,7 +12,7 @@ namespace Logix
 
         public readonly LogixTarget Target;
         private Dictionary<string, Tag> tagCache = new();
-        private LogixTagSubscription? subscription;
+        private LogixTagReadWriteQueue? readWriteQueue;
         private volatile bool isConnected = false;
 
         private const string EX_ERR_TIMEOUT = "ErrorTimeout";
@@ -20,6 +20,7 @@ namespace Logix
         public LogixDriver(LogixTarget target)
         {
             Target = target;
+            SetConnectionState(true);
         }
 
         /// <summary>
@@ -71,70 +72,103 @@ namespace Logix
 
         protected void SetConnectionState(bool isConnected)
         {
-            // rather than throw the subscription out, should we just stop/restart the timer?
             if (isConnected)
             {
                 this.isConnected = true;
-                if (subscription is null)
-                    subscription = new LogixTagSubscription(this, 500);
+                if (readWriteQueue is null)
+                    readWriteQueue = new LogixTagReadWriteQueue(this, 50);
             }
             else
             {
                 this.isConnected = false;
-                subscription?.Dispose();
-                subscription = null;
+                readWriteQueue?.Dispose();
+                readWriteQueue = null;
             }
         }
 
         /// <summary>
-        /// Reads a PLC tag by name
+        /// Reads a PLC tag by name synchronously
         /// </summary>
-        /// <param name="tagName"></param>
-        /// <returns>Tag value as object</returns>
-        /// <exception cref="Exception"></exception>
         public object ReadTagValue(string tagName)
         {
             try
             {
                 var (definition, tag) = GetTag(tagName);
 
-                // check if subscribed
-                if (subscription is not null)
-                {
-                    var (subscribedTag, isStale) = subscription.GetSubscribedTag(tagName);
-                    if (subscribedTag is not null && !isStale)
-                        return ValueResolver.ResolveValue(subscribedTag, definition);
+                if (readWriteQueue is null)
+                    throw new InvalidOperationException("Queue not initialized. Ensure connection is established via ReadControllerInfo().");
 
-                    // wait for subscription reads
-                    if (subscription.Busy)
-                        subscription.WaitUntilIdle();
-                }
-
-                tag.Read();
-
-                return ValueResolver.ResolveValue(tag, definition);
+                return readWriteQueue.EnqueueReadSync(tagName, definition, tag)
+                    ?? throw new InvalidOperationException($"Read operation returned null for tag {tagName}");
             }
             catch (Exception ex)
             {
                 if (ex.Message == EX_ERR_TIMEOUT)
                     SetConnectionState(false);
-                
+
                 throw new Exception($"Error reading tag {tagName}", ex);
             }
         }
 
+        /// <summary>
+        /// Reads a PLC tag by name asynchronously
+        /// </summary>
+        public async Task<object?> ReadTagValueAsync(string tagName)
+        {
+            try
+            {
+                var (definition, tag) = GetTag(tagName);
+
+                if (readWriteQueue is null)
+                    throw new InvalidOperationException("Queue not initialized. Ensure connection is established via ReadControllerInfo().");
+
+                return await readWriteQueue.EnqueueReadAsync(tagName, definition, tag);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    SetConnectionState(false);
+
+                throw new Exception($"Error reading tag {tagName}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Writes a PLC tag by name synchronously
+        /// </summary>
         public void WriteTagValue(string tagName, object value)
         {
             try
             {
                 var (definition, tag) = GetTag(tagName);
 
-                if (!tag.IsInitialized)
-                    tag.Initialize();
+                if (readWriteQueue is null)
+                    throw new InvalidOperationException("Queue not initialized. Ensure connection is established via ReadControllerInfo().");
 
-                ValueResolver.WriteTagBuffer(tag, definition, value);
+                readWriteQueue.EnqueueWriteSync(tagName, definition, tag, value);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    SetConnectionState(false);
 
-                tag.Write();
+                throw new Exception($"Error writing tag {tagName}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Writes a PLC tag by name asynchronously
+        /// </summary>
+        public async Task WriteTagValueAsync(string tagName, object value)
+        {
+            try
+            {
+                var (definition, tag) = GetTag(tagName);
+
+                if (readWriteQueue is null)
+                    throw new InvalidOperationException("Queue not initialized. Ensure connection is established via ReadControllerInfo().");
+
+                await readWriteQueue.EnqueueWriteAsync(tagName, definition, tag, value);
             }
             catch (Exception ex)
             {
@@ -163,35 +197,12 @@ namespace Logix
             return info;
         }
 
-        public void SubscribeTag(string tagName)
-        {
-            if (subscription is null) return;
-
-            var (definition, tag) = GetTag(tagName);
-
-            if (!subscription.IsTagSubscribed(tagName))
-                subscription.SubscribeTag(tagName, tag);
-        }
-
-        public void UnsubscribeTag(string tagName)
-        {
-            if (subscription is null) return;
-            subscription.UnsubscribeTag(tagName);
-        }
-
-        public void UnsubscribeTags(IEnumerable<string> tagNames)
-        {
-            foreach (var tagName in tagNames)
-                UnsubscribeTag(tagName);
-        }
-
         public void Dispose()
         {
             foreach (var tag in tagCache.Values)
                 tag.Dispose();
 
-            if (subscription is not null)
-                subscription.Dispose();
+            readWriteQueue?.Dispose();
         }
     }
 }

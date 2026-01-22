@@ -48,16 +48,18 @@ namespace Logix.Tags
             }
             else
             {
-                if (selector.StartsWith("Program:"))
-                {
-                    // WIP
-                    // isolate program / tag names
-                    var progParts = selector.Substring(selector.IndexOf(':') + 1).Split('.');
-                    var programName = progParts[0];
-                }
+                if (!selector.StartsWith("Program:"))
+                    throw new Exception("Invalid program selector format!");
+
+                // isolate program name
+                var progParts = selector.Substring(selector.IndexOf(':') + 1).Split('.');
+                var programName = progParts[0];
+
+                if (string.IsNullOrEmpty(programName))
+                    throw new Exception("Invalid program selector format!");
 
                 var programTags = tagInfos
-                    .Where(tag => tag.Name.StartsWith($"Program:{selector}"))
+                    .Where(tag => tag.Name.StartsWith($"Program:{programName}"))
                     .Select(tag =>
                     {
                         var progTagInfos = reader.ReadProgramTags(target, tag.Name);

@@ -65,7 +65,11 @@ namespace TcHmiLogixDriver
 
                 UpdateMappedSymbolList();
             }
-            catch (Exception ex) { }
+            catch (Exception ex) 
+            {
+                System.IO.File.AppendAllText("configLoad.log", $"\n{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
+                Console.WriteLine("Error on reconnect: " + ex.ToString());
+            }
             
             connectionStateTimer.Start();
         }
@@ -124,7 +128,7 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
-                System.IO.File.AppendAllText("configLoad.log", $"{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
+                System.IO.File.AppendAllText("configLoad.log", $"\n{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
                 Console.WriteLine("Error loading configuration: " + ex.ToString());
             }
         }
@@ -163,6 +167,8 @@ namespace TcHmiLogixDriver
                     var tags = driver.LoadTags(config.tagProgramFilter);
 
                     // cache tags
+                    // may want to encode or compress this - large entries here may be causing server crash
+                    // on project load - need to diagnose logs and dump files
                     var cacheConfigPath = $"Targets::{driver.Target.Name}::tagDefinitionCache";
                     var json = JsonConvert.SerializeObject(tags);
                     TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, cacheConfigPath, json);

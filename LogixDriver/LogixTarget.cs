@@ -33,8 +33,8 @@ namespace Logix
             this.TimeoutMs = TimeoutMs;
         }
 
-        public TagDefinition? TryGetTagDefinition(string name) => 
-            tagDefinitionsFlat.TryGetValue(name, out var tag) ? tag : null;
+        public bool TryGetTagDefinition(string name, out TagDefinition? tagDefinition) => 
+            tagDefinitionsFlat.TryGetValue(name, out tagDefinition);
 
         public void AddTagDefinition(TagDefinition tag)
         {

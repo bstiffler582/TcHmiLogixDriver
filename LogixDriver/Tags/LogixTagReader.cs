@@ -1,66 +1,63 @@
 ﻿using libplctag;
-using libplctag.DataTypes;
-using Logix;
 
 namespace Logix.Tags
 {
     public interface ILogixTagReader
     {
-        TagInfo[] ReadTagList(LogixTarget target);
+        IEnumerable<TagInfo> ReadTagList(LogixTarget target);
         UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
-        TagInfo[] ReadProgramTags(LogixTarget target, string program);
+        IEnumerable<TagInfo> ReadProgramTags(LogixTarget target, string program);
         Tag CreateTag(LogixTarget target, string path, int elementCount = 1);
         string ReadControllerInfo(LogixTarget target);
     }
 
     public class LogixTagReader : ILogixTagReader
     {
-        public TagInfo[] ReadTagList(LogixTarget target)
+        public IEnumerable<TagInfo> ReadTagList(LogixTarget target)
         {
-            using (var tagList = new Tag<TagInfoPlcMapper, TagInfo[]>
+            var tagList = new List<TagInfo>();
+
+            var controllerTags = CreateTag(target, "@tags");
+            controllerTags.Read();
+
+            var tagSize = controllerTags.GetSize();
+
+            int offset = 0;
+            while (offset < tagSize)
             {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = "@tags",
-                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs),
-            })
-            {
-                return tagList.Read();
+                var tagInfo = LogixTagDecoder.Decode(controllerTags, offset, out int elementSize);
+                tagList.Add(tagInfo);
+                offset += elementSize;
             }
+
+            return tagList;
         }
 
         public UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId)
         {
-            using (var udtTag = new Tag<UdtInfoPlcMapper, UdtInfo>
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = $"@udt/{udtId}",
-                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs),
-            })
-            {
-                return udtTag.Read();
-            }
+            var tag = CreateTag(target, $"@udt/{udtId}");
+            tag.Read();
+            return LogixTagDecoder.DecodeUdt(tag);
         }
 
-        public TagInfo[] ReadProgramTags(LogixTarget target, string program)
+        public IEnumerable<TagInfo> ReadProgramTags(LogixTarget target, string program)
         {
-            using (var programTags = new Tag<TagInfoPlcMapper, TagInfo[]>
+            var tagList = new List<TagInfo>();
+
+            var programTags = CreateTag(target, $"{program}.@tags");
+            programTags.Read();
+
+            var tagSize = programTags.GetSize();
+
+            int offset = 0;
+            while (offset < tagSize)
             {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = target.Protocol,
-                Name = $"{program}.@tags",
-                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
-            })
-            {
-                return programTags.Read();
+                var tagInfo = LogixTagDecoder.Decode(programTags, offset, out int elementSize);
+                tagList.Add(tagInfo);
+                offset += elementSize;
             }
+
+            return tagList;
         }
 
         public Tag CreateTag(LogixTarget target, string path, int elementCount = 1)

@@ -1,7 +1,4 @@
-﻿using libplctag;
-using libplctag.DataTypes;
-
-namespace Logix
+﻿namespace Logix
 {
     public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0, uint BitOffset = 0);
     public record TypeDefinition(ushort Code, uint Length, string Name = "", uint[]? Dimensions = null, List<TagDefinition>? Members = null)
@@ -49,125 +46,32 @@ namespace Logix
         public static bool IsArray(ushort typeCode) =>
             ((typeCode & TYPE_IS_ARRAY) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
 
+        public static bool IsSystem(ushort typeCode) =>
+            ((typeCode & TYPE_IS_SYSTEM) != 0);
+
         public static ushort GetUdtId(ushort typeCode) =>
             (ushort)(typeCode & TYPE_UDT_ID_MASK);
 
         public static ushort GetArrayBaseType(ushort typeCode) =>
             (ushort)(typeCode & ~TYPE_IS_ARRAY);
 
-        public static string ResolveTypeName(ushort typeCode)
+        public static string ResolveTypeName(ushort code, string name = "")
         {
-            if (Enum.IsDefined(typeof(Code), typeCode))
-                return ((Code)typeCode).ToString();
-            else if ((typeCode & 0x1000) != 0)
-                return $"SystemType(0x{typeCode:X4})";
-            else 
-                return $"UnknownType(0x{typeCode:X4})";
-        }
-
-        // TODO:
-        // create records for TagInfo, UdtInfo
-        // create static methods for DecodeTagInfo, DecodeUdtInfo
-        // remove dependency on mapper methods, decode from scratch
-
-        private static TagInfo DecodeTagInfo(Tag tag, out int elementSize, int offset = 0)
-        {
-            /*
-            var tagInstanceId = tag.GetUInt32(offset);
-            var tagType = tag.GetUInt16(offset + 4);
-            var tagLength = tag.GetUInt16(offset + 6);
-            var tagArrayDims = new uint[]
-            {
-                tag.GetUInt32(offset + 8),
-                tag.GetUInt32(offset + 12),
-                tag.GetUInt32(offset + 16)
-            };
-
-            var apparentTagNameLength = (int)tag.GetUInt16(offset + 20);
-            var actualTagNameLength = Math.Min(apparentTagNameLength, TAG_STRING_SIZE * 2 - 1);
-
-            var tagNameBytes = Enumerable.Range(offset + 22, actualTagNameLength)
-                .Select(o => tag.GetUInt8(o))
-                .Select(Convert.ToByte)
-                .ToArray();
-
-            var tagName = Encoding.ASCII.GetString(tagNameBytes);
-
-            elementSize = 22 + actualTagNameLength;
-
-            return new TagInfo()
-            {
-                Id = tagInstanceId,
-                Type = tagType,
-                Name = tagName,
-                Length = tagLength,
-                Dimensions = tagArrayDims
-            };
-            */
-
-            throw new NotImplementedException();
-        }
-
-        public static TypeDefinition TypeResolver(TagInfo tagInfo, Dictionary<ushort, TypeDefinition> typeCache, Func<ushort, UdtInfo> readUdtInfo)
-        {
-            if (IsArray(tagInfo.Type))
-            {
-                // base element type
-                var baseTypeCode = GetArrayBaseType(tagInfo.Type);
-                var baseType = TypeResolver(new TagInfo { Type = baseTypeCode }, typeCache, readUdtInfo);
-
-                // build n-dimension array definition
-                var dims = tagInfo.Dimensions.Where(n => n > 0).ToArray();
-                TypeDefinition BuildArray(int idx = 0)
-                {
-                    if (idx >= dims.Length || dims[idx] == 0)
-                        return baseType;
-
-                    var child = BuildArray(idx + 1);
-
-                    var dim = (int)dims[idx];
-                    var members = Enumerable.Range(0, dim)
-                        .Select(i => new TagDefinition($"{i}", child, (uint)i * child.Length))
-                        .ToList();
-
-                    var arrayName = $"ARRAY[{dim}] OF {child.Name}";
-                    var arrayLength = (uint)dim * child.Length;
-                    var subDims = dims.Skip(idx).ToArray();
-
-                    return new TypeDefinition(tagInfo.Type, arrayLength, arrayName, subDims, members);
-                }
-
-                return BuildArray();
-            }
-            else if (IsUdt(tagInfo.Type))
-            {
-                var udtId = GetUdtId(tagInfo.Type);
-                if (typeCache.TryGetValue(udtId, out var cached))
-                    return cached;
-
-                var udtInfo = readUdtInfo(udtId);
-                var members = udtInfo.Fields
-                    .Select(m =>
-                    {
-                        var memberInfo = new TagInfo { Type = m.Type, Dimensions = IsArray(m.Type) ? [m.Metadata] : [0] };
-                        var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
-                        return new TagDefinition(m.Name, TypeResolver(memberInfo, typeCache, readUdtInfo), m.Offset, (uint)bitOffset);
-                    }).ToList();
-
-                var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, Array.Empty<uint>(), members);
-
-                typeCache.Add(udtId, udtDef);
-
-                return udtDef;
-            }
+            if (Enum.IsDefined(typeof(Code), code))
+                return ((Code)code).ToString();
+            else if (IsArray(code))
+                return "array";
+            else if (IsUdt(code))
+                return "object";
+            else if (name.StartsWith("Program:"))
+                return "program";
+            else if (IsSystem(code))
+                return $"SystemType(0x{code:X4})";
             else
-            {
-                var length = (tagInfo.Length > 0) ? tagInfo.Length : GetTypeLength(tagInfo.Type);
-                return new TypeDefinition(tagInfo.Type, length, ResolveTypeName(tagInfo.Type));
-            }
+                return $"UnknownType(0x{code:X4})";
         }
 
-        private static ushort GetTypeLength(ushort typeCode)
+        public static ushort GetTypeLength(ushort typeCode)
         {
             return (Code)(typeCode) switch
             {
@@ -180,7 +84,7 @@ namespace Logix
                 Code.LREAL => 8,
                 Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
                     => 88,
-                _ => throw new Exception($"Primitive type code:{typeCode:X} not handled")
+                _ => 0
             };
         }
     }

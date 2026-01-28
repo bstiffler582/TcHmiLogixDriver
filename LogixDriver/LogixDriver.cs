@@ -29,14 +29,16 @@ namespace Logix
         /// <returns>Mutates Target</returns>
         public IEnumerable<TagDefinition> LoadTags(string selector = "*")
         {
-            var tags = TagLoader.LoadTags(Target, TagReader, selector);
+            var tags = TagLoader.LoadAllTagDefinitions(Target, TagReader);
             Target.AddTagDefinition(tags);
             return tags;
         }
 
         private (TagDefinition, Tag) GetTag(string tagName)
         {
-            var definition = Target.TryGetTagDefinition(tagName);
+            if (!Target.TryGetTagDefinition(tagName, out var definition))
+                definition = TagLoader.LoadTagDefinition(tagName, Target, TagReader);
+            
             if (definition is null)
                 throw new Exception("Tag definition not found.");
 

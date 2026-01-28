@@ -1,78 +1,56 @@
-using libplctag.DataTypes;
+using libplctag;
 
 namespace Logix.Tags
 {
     public interface ILogixTagLoader
     {
-        IEnumerable<TagDefinition> LoadTags(LogixTarget target , ILogixTagReader reader, string selector = "*");
+        IEnumerable<TagDefinition> LoadAllTagDefinitions(LogixTarget target , ILogixTagReader reader);
+        TagDefinition LoadTagDefinition(string tagName, LogixTarget target, ILogixTagReader reader);
     }
 
     public class LogixTagLoader : ILogixTagLoader
     {
         
-        // TODO: Refine selector
-        public IEnumerable<TagDefinition> LoadTags(LogixTarget target, ILogixTagReader reader, string selector = "*")
+        public IEnumerable<TagDefinition> LoadAllTagDefinitions(LogixTarget target, ILogixTagReader reader)
         {
             var typeCache = new Dictionary<ushort, TypeDefinition>();
 
-            // partial function to read UDT info
-            Func<ushort, UdtInfo> udtInfoReader = (udtId) =>
-                reader.ReadUdtInfo(target, udtId);
+            var typeResolver = new LogixTypeResolver(target, reader, typeCache);
 
             var tagInfos = reader.ReadTagList(target);
 
-            // read all tags
-            if (string.IsNullOrEmpty(selector) || selector == "*")
-            {
-                var controllerTags = tagInfos
-                .Where(tag =>
-                    !tag.Name.StartsWith("Program:") &&
-                    !LogixTypes.ResolveTypeName(tag.Type).Contains("SystemType"))
-                .Select(tag => new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader)))
+            var controllerTags = tagInfos
+                    .Where(tag =>
+                        !tag.Name.StartsWith("Program:") &&
+                        !LogixTypes.IsSystem(tag.Type))
+                    .Select(tag => new TagDefinition(tag.Name, typeResolver.Resolve(tag, true)))
+                    .ToList();
+
+            var programTags = tagInfos
+                .Where(tag => tag.Name.StartsWith("Program:"))
+                .Select(tag =>
+                {
+                    var progTagInfos = reader.ReadProgramTags(target, tag.Name);
+                    var progTags = progTagInfos
+                        .Where(t => !LogixTypes.IsSystem(t.Type))
+                        .Select(tag => new TagDefinition(tag.Name, typeResolver.Resolve(tag, true)))
+                        .ToList();
+                    return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
+                })
                 .ToList();
 
-                var programTags = tagInfos
-                    .Where(tag => tag.Name.StartsWith("Program:"))
-                    .Select(tag =>
-                    {
-                        var progTagInfos = reader.ReadProgramTags(target, tag.Name);
-                        var progTags = progTagInfos
-                            .Where(t => !LogixTypes.ResolveTypeName(t.Type).Contains("SystemType"))
-                            .Select(tag => new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader)))
-                            .ToList();
-                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
-                    })
-                    .ToList();
+            return programTags.Concat(controllerTags);
+        }
 
-                return programTags.Concat(controllerTags);
-            }
-            else
-            {
-                if (!selector.StartsWith("Program:"))
-                    throw new Exception("Invalid program selector format!");
+        // TODO: implement individual tag definition loads via shallow type resolution
+        public TagDefinition LoadTagDefinition(string tagName, LogixTarget target, ILogixTagReader reader)
+        {
+            var pathParts = tagName
+                .Replace('[', '.')
+                .Replace(']', '.')
+                .Split('.');
 
-                // isolate program name
-                var progParts = selector.Substring(selector.IndexOf(':') + 1).Split('.');
-                var programName = progParts[0];
-
-                if (string.IsNullOrEmpty(programName))
-                    throw new Exception("Invalid program selector format!");
-
-                var programTags = tagInfos
-                    .Where(tag => tag.Name.StartsWith($"Program:{programName}"))
-                    .Select(tag =>
-                    {
-                        var progTagInfos = reader.ReadProgramTags(target, tag.Name);
-                        var progTags = progTagInfos
-                            .Where(t => !LogixTypes.ResolveTypeName(t.Type).Contains("SystemType"))
-                            .Select(tag => new TagDefinition(tag.Name, LogixTypes.TypeResolver(tag, typeCache, udtInfoReader)))
-                            .ToList();
-                        return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
-                    })
-                    .ToList();
-
-                return programTags;
-            }
+            throw new NotImplementedException();
         }
     }
 }

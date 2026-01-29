@@ -37,7 +37,9 @@ namespace Logix.Tags
         {
             var tag = CreateTag(target, $"@udt/{udtId}");
             tag.Read();
-            return LogixTagDecoder.DecodeUdt(tag);
+            var udtInfo = LogixTagDecoder.DecodeUdt(tag);
+
+            return udtInfo;
         }
 
         public IEnumerable<TagInfo> ReadProgramTags(LogixTarget target, string program)

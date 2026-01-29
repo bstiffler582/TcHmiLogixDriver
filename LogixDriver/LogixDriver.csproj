@@ -19,4 +19,13 @@
     <PackageReference Include="libplctag.NativeImport" Version="1.0.41" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Test\OfflineTags.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Test\OfflineUdts.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

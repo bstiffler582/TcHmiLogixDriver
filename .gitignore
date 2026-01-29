@@ -5,3 +5,5 @@ json-schema.org/
 .vs/
 .engineering_servers/
 *.~u
+/LogixDriver/Test/OfflineTags.json
+/LogixDriver/Test/OfflineUdts.json

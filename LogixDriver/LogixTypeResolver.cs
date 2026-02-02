@@ -76,7 +76,7 @@ namespace Logix
                 : ResolveMembersShallow(udtInfo);
 
             var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, Array.Empty<uint>(), members);
-            typeCache.Add(udtId, udtDef);
+            if (deep) typeCache.Add(udtId, udtDef);
 
             return udtDef;
         }
@@ -102,7 +102,8 @@ namespace Logix
                 .Select(m =>
                 {
                     var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
-                    var memberType = new TypeDefinition(m.Type, GetTypeLength(m.Type), ResolveTypeName(m.Type));
+                    uint[] dimensions = IsArray(m.Type) ? [m.Metadata] : [0];
+                    var memberType = new TypeDefinition(m.Type, GetTypeLength(m.Type), ResolveTypeName(m.Type), dimensions);
                     return new TagDefinition(m.Name, memberType, m.Offset, (uint)bitOffset);
                 }).ToList();
         }

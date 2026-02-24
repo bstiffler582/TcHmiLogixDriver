@@ -32,7 +32,7 @@ namespace Logix
             IEnumerable<TagDefinition> tags;
 
             if (tagNames is null)
-                tags = TagLoader.LoadAllTagDefinitions(Target, TagReader);
+                tags = TagLoader.LoadTagDefinitions(Target, TagReader);
             else
                 tags = tagNames.Select(t => TagLoader.LoadTagDefinition(t, Target, TagReader)).ToList();
 

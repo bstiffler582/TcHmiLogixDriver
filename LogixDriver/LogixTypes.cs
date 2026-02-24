@@ -1,5 +1,12 @@
 ﻿namespace Logix
 {
+    public enum ExpansionLevel
+    {
+        None = 0,
+        Shallow = 1,
+        Deep = 2
+    }
+
     public class TagDefinition
     {
         public string Name { get; set; }
@@ -10,6 +17,7 @@
         public string TypeName { get; set; }
         public uint[]? Dimensions { get; set; }
         public List<TagDefinition>? Children { get; set; }
+        public ExpansionLevel ExpansionLevel { get; set; } = ExpansionLevel.None;
 
         public TagDefinition(
             string name,
@@ -56,6 +64,7 @@
         }
 
         public bool IsArray => LogixTypes.IsArray(TypeCode);
+        public bool IsPrimitive => LogixTypes.IsPrimitive(TypeCode);
         public int ElementCount()
         {
             if (Dimensions is null || Dimensions.Length == 0) return 1;

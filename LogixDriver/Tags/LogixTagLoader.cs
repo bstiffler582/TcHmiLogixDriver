@@ -1,27 +1,26 @@
-using libplctag;
-
 namespace Logix.Tags
 {
     public interface ILogixTagLoader
     {
-        IEnumerable<TagDefinition> LoadAllTagDefinitions(LogixTarget target , ILogixTagReader reader);
+        IEnumerable<TagDefinition> LoadTagDefinitions(LogixTarget target , ILogixTagReader reader, bool deep = true);
         TagDefinition LoadTagDefinition(string tagName, LogixTarget target, ILogixTagReader reader);
     }
 
     public class LogixTagLoader : ILogixTagLoader
     {
-        public IEnumerable<TagDefinition> LoadAllTagDefinitions(LogixTarget target, ILogixTagReader reader)
+        public IEnumerable<TagDefinition> LoadTagDefinitions(LogixTarget target, ILogixTagReader reader, bool deep = true)
         {
-            var typeResolver = new LogixTypeResolver(target, reader);
+            var treeBuilder = new LogixTagTreeBuilder(target, reader);
             var baseTags = ReadAllBaseTags(target, reader);
 
-            var resolved = baseTags
-                .Select(tag => typeResolver.Resolve(tag, true))
-                .ToList();
+            if (deep)
+            {
+                foreach (var tag in baseTags)
+                    treeBuilder.ExpandNode(tag, true);
+            }
 
-            target.AddTagDefinition(resolved);
-
-            return resolved;
+            target.AddTagDefinition(baseTags);
+            return baseTags;
         }
 
         private IEnumerable<TagDefinition> ReadAllBaseTags(LogixTarget target, ILogixTagReader reader)
@@ -33,63 +32,38 @@ namespace Logix.Tags
         // Load individual tag definition
         public TagDefinition LoadTagDefinition(string tagName, LogixTarget target, ILogixTagReader reader)
         {
-            throw new NotImplementedException();
-            //if (target.TagDefinitionsFlat.TryGetValue(tagName, out var tagDef))
-            //    return tagDef;
+            if (target.TagDefinitions.Count == 0)
+                target.AddTagDefinition(ReadAllBaseTags(target, reader));
 
-            //if (target.TagDefinitions.Count == 0)
-            //    target.AddTagDefinition(ReadAllBaseTags(target, reader));
+            var pathParts = tagName
+                .Replace('[', '.')
+                .Replace(']', '.')
+                .Split('.', StringSplitOptions.RemoveEmptyEntries);
 
-            //var pathParts = tagName
-            //    .Replace('[', '.')
-            //    .Replace(']', '.')
-            //    .Split('.')
-            //    .Where(s => !string.IsNullOrEmpty(s))
-            //    .ToArray();
+            if (pathParts.Length < 1)
+                throw new ArgumentException("Invalid tag name");
 
-            //if (pathParts.Length < 1)
-            //    throw new ArgumentException("Invalid tag name");
+            if (!target.TagDefinitions.TryGetValue(pathParts[0], out var root))
+                throw new Exception($"Root tag {pathParts[0]} not found.");
 
-            //if (!target.TagDefinitions.TryGetValue(pathParts[0], out var root))
-            //    throw new Exception($"Root tag {pathParts[0]} not found.");
+            var treeBuilder = new LogixTagTreeBuilder(target, reader);
+            var pathQueue = new Queue<string>(pathParts.Skip(1));
 
-            //var typeResolver = new LogixTypeResolver(target, reader);
+            TagDefinition tag = root;
+            while (pathQueue.Count > 0)
+            {
+                var memberName = pathQueue.Dequeue();
+                if (tag?.ExpansionLevel < ExpansionLevel.Shallow)
+                    treeBuilder.ExpandNode(tag, false);
+                var member = tag?.Children!.FirstOrDefault(c => c.Name == memberName);
+                tag = member!;
+            }
 
-            //var type = ResolveNestedMember(root, new Queue<string>(pathParts.Skip(1)), typeResolver);
+            if (!tag.IsPrimitive && tag.ExpansionLevel < ExpansionLevel.Deep)
+                treeBuilder.ExpandNode(tag, true);
 
-            //root = new TagDefinition(root.Name, type, root.Offset, root.BitOffset);
-
-            //return root;
+            target.AddTagDefinition(root);
+            return new TagDefinition(tag) { Name = tagName };
         }
-
-        //private TypeDefinition ResolveNestedMember(TagDefinition tag, Queue<string> path, LogixTypeResolver resolver)
-        //{
-        //    if (path.Count == 0)
-        //        return resolver.Resolve(tag, deep: true);
-
-        //    var segment = path.Dequeue();
-
-        //    var shallowType = resolver.Resolve(tag, deep: false);
-
-        //    var member = shallowType.Members?.FirstOrDefault(m => m.Name == segment);
-        //    if (member == null)
-        //        throw new Exception($"Member '{segment}' not found in type '{shallowType.Name}'");
-
-        //    var resolvedMemberType = ResolveNestedMember(member, path, resolver);
-
-        //    var updatedMembers = shallowType.Members!
-        //        .Select(m => m.Name == segment
-        //            ? new TagDefinition(m.Name, resolvedMemberType, m.Offset, m.BitOffset)
-        //            : m)
-        //        .ToList();
-
-        //    return new TypeDefinition(
-        //        shallowType.Code,
-        //        shallowType.Length,
-        //        shallowType.Name,
-        //        shallowType.Dimensions,
-        //        updatedMembers
-        //    );
-        //}
     }
 }

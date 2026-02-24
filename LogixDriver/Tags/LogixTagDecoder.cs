@@ -1,42 +1,15 @@
 ﻿using libplctag;
 using System.Text;
+using static Logix.LogixTypes;
 
 namespace Logix.Tags
 {
-    public class TagInfo
-    {
-        public uint Id { get; set; }
-        public ushort Type { get; set; }
-        public string Name { get; set; } = "";
-        public ushort Length { get; set; }
-        public uint[] Dimensions { get; set; } = new uint[0];
-    }
-
-    public class UdtFieldInfo
-    {
-        public string Name { get; set; } = "";
-        public ushort Type { get; set; }
-        public ushort Metadata { get; set; }
-        public uint Offset { get; set; }
-    }
-
-    public class UdtInfo
-    {
-        public uint Size { get; set; }
-        public string Name { get; set; } = "";
-        public ushort Id { get; set; }
-        public ushort NumFields { get; set; }
-        public ushort Handle { get; set; }
-        public UdtFieldInfo[] Fields { get; set; } = new UdtFieldInfo[0];
-    }
-
     public static class LogixTagDecoder
     {
         const int TAG_STRING_SIZE = 200;
 
-        public static TagInfo Decode(Tag tag, int offset, out int elementSize)
+        public static TagDefinition Decode(Tag tag, int offset, out int elementSize)
         {
-
             var tagInstanceId = tag.GetUInt32(offset);
             var tagType = tag.GetUInt16(offset + 4);
             var tagLength = tag.GetUInt16(offset + 6);
@@ -59,18 +32,10 @@ namespace Logix.Tags
 
             elementSize = 22 + actualTagNameLength;
 
-            return new TagInfo()
-            {
-                Id = tagInstanceId,
-                Type = tagType,
-                Name = tagName,
-                Length = tagLength,
-                Dimensions = tagArrayDims
-            };
-
+            return new TagDefinition(tagName, tagType, tagLength, (uint)offset, 0, ResolveTypeName(tagType), tagArrayDims);
         }
 
-        public static UdtInfo DecodeUdt(Tag tag)
+        public static TypeDefinition DecodeUdt(Tag tag)
         {
 
             var template_id = tag.GetUInt16(0);
@@ -122,8 +87,33 @@ namespace Logix.Tags
                 offset += tag.GetStringTotalLength(offset);
             }
 
-            return udtInfo;
+            var members = udtInfo.Fields.Select(m =>
+            {
+                var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
+                var dimension = IsArray(m.Type) ? m.Metadata : 0;
+                return new TypeMemberDefinition(m.Type, m.Name, m.Offset, (ushort)dimension, (ushort)bitOffset);
+            })
+            .ToList();
 
+            return new TypeDefinition(udtInfo.Id, udtInfo.Size, udtInfo.Name, members);
         }
+    }
+
+    internal class UdtFieldInfo
+    {
+        public string Name { get; set; } = "";
+        public ushort Type { get; set; }
+        public ushort Metadata { get; set; }
+        public uint Offset { get; set; }
+    }
+
+    internal class UdtInfo
+    {
+        public uint Size { get; set; }
+        public string Name { get; set; } = "";
+        public ushort Id { get; set; }
+        public ushort NumFields { get; set; }
+        public ushort Handle { get; set; }
+        public UdtFieldInfo[] Fields { get; set; } = new UdtFieldInfo[0];
     }
 }

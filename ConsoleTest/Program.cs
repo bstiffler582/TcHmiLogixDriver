@@ -11,17 +11,18 @@ var driver = new LogixDriver(target);
 //var udtMap = JsonSerializer.Deserialize<Dictionary<ushort, UdtInfo>>(File.ReadAllText(@"Test\OfflineUdts.json"));
 
 //driver.TagReader = new TestLogixTagReader(tagMap, udtMap);
+//var tags = new List<string>() { "Program:MainProgram.prgTmr.EN", "Program:MainProgram.arr2D" };
+//driver.LoadTags(tags);
+driver.LoadTags();
 
-//driver.LoadTags();
-
-//foreach (var def in target.TagDefinitionsFlat)
-//    Console.WriteLine($"Path: {def.Key}; Type: {def.Value.Type.Name}; Length: {def.Value.Type.Length}; Offset: {def.Value.Offset}; BitOffset: {def.Value.BitOffset}");
+foreach (var def in target.TagDefinitionsFlat)
+    Console.WriteLine($"Path: {def.Key}; Type: {def.Value.TypeName}; Length: {def.Value.Length}; Offset: {def.Value.Offset}; BitOffset: {def.Value.BitOffset}");
 
 //var test = target.TagDefinitions;
 //File.WriteAllText("tags.json", JsonSerializer.Serialize((driver.TagReader as LogixTagReader).tagMap, new JsonSerializerOptions() { WriteIndented = true }));
 //File.WriteAllText("udts.json", JsonSerializer.Serialize((driver.TagReader as LogixTagReader).udtMap, new JsonSerializerOptions() { WriteIndented = true }));
 
-var res = driver.ReadTagValue("Program:MainProgram.arr2D[0]");
+var res = driver.ReadTagValue("Program:MainProgram.arr2D[1]");
 Console.WriteLine(JsonSerializer.Serialize(res));
 
 var info = driver.ReadControllerInfo();

@@ -14,6 +14,10 @@ namespace Logix
         // map of tag definitions
         private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
         private readonly Dictionary<string, TagDefinition> tagDefinitionsFlat = new();
+
+        // type definition cache
+        private readonly Dictionary<ushort, TypeDefinition> typeDefinitionCache = new();
+
         public IReadOnlyDictionary<string, TagDefinition> TagDefinitions => tagDefinitions;
         public IReadOnlyDictionary<string, TagDefinition> TagDefinitionsFlat => tagDefinitionsFlat;
 
@@ -51,6 +55,18 @@ namespace Logix
                 AddTagDefinition(tag);
         }
 
+        public void CacheTypeDefinition(ushort typeId, TypeDefinition type)
+        {
+            typeDefinitionCache.TryAdd(typeId, type);
+        }
+
+        public bool TryGetCachedTypeDefinition(ushort typeId, out TypeDefinition? definition)
+        {
+            if (typeDefinitionCache.TryGetValue(typeId, out definition))
+                return true;
+            else return false;
+        }
+
         private static IEnumerable<(string Path, TagDefinition TagDef)> Flatten(TagDefinition node, string parentPath = "")
         {
             string fullPath;
@@ -61,12 +77,12 @@ namespace Logix
 
             yield return (fullPath, node);
 
-            if (node.Type.Name.Contains("STRING"))
+            if (node.TypeName.Contains("STRING"))
                 yield break;
 
-            if (node.Type.Members is not null)
+            if (node.Children is not null)
             {
-                foreach (var child in node.Type.Members.SelectMany(c => Flatten(c, fullPath)))
+                foreach (var child in node.Children.SelectMany(c => Flatten(c, fullPath)))
                     yield return child;
             }
         }

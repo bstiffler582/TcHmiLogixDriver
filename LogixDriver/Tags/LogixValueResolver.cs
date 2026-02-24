@@ -1,6 +1,4 @@
 using libplctag;
-using System.Collections;
-using System.Text.Json;
 using static Logix.LogixTypes;
 
 namespace Logix.Tags
@@ -95,80 +93,80 @@ namespace Logix.Tags
     {
         public override object ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
         {
-            if (LogixTypes.IsArray(definition.Type.Code))
+            if (LogixTypes.IsArray(definition.TypeCode))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return 0;
 
                 var ret = new List<object>();
-                foreach (var m in definition.Type.Members)
+                foreach (var m in definition.Children)
                     ret.Add(ResolveValue(tag, m, offset + (int)m.Offset));
 
                 return ret;
             }
-            else if (LogixTypes.IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            else if (LogixTypes.IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return 0;
 
                 var ret = new Dictionary<string, object>();
-                foreach (var m in definition.Type.Members)
+                foreach (var c in definition.Children)
                 {
-                    if (m.Type.Code == (ushort)Code.BOOL)
-                        ret[m.Name] = ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                    if (c.TypeCode == (ushort)Code.BOOL)
+                        ret[c.Name] = ResolveValue(tag, c, ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
                     else
-                        ret[m.Name] = ResolveValue(tag, m, offset + (int)m.Offset);
+                        ret[c.Name] = ResolveValue(tag, c, offset + (int)c.Offset);
                 }
 
                 return ret;
             }
             else
             {
-                return PrimitiveValueResolver(tag, definition.Type.Code, offset);
+                return PrimitiveValueResolver(tag, definition.TypeCode, offset);
             }
         }
 
         public override void WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset = 0)
         {
-            if (LogixTypes.IsArray(definition.Type.Code))
+            if (LogixTypes.IsArray(definition.TypeCode))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
                 if (value.GetType() == typeof(IEnumerable<>))
                 {
                     var arr = (value as IEnumerable<object>)?.ToArray();
                     if (arr is null) throw new Exception($"Unable to cast write value for array tag {tag.Name} to Enumerable.");
-                    foreach (var m in definition.Type.Members)
+                    foreach (var c in definition.Children)
                     {
                         {
-                            int.TryParse(m.Name, out var i);
-                            WriteTagBuffer(tag, m, arr[i], offset + (int)m.Offset);
+                            int.TryParse(c.Name, out var i);
+                            WriteTagBuffer(tag, c, arr[i], offset + (int)c.Offset);
                         }
                     }
                 }
             }
-            else if (LogixTypes.IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            else if (LogixTypes.IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
                 if (value.GetType() == typeof(IDictionary<string, object>))
                 {
                     var dict = value as IDictionary<string, object>;
                     if (dict is null) throw new Exception($"Unable to cast write value for tag {tag.Name} to Dictionary.");
-                    foreach (var m in definition.Type.Members)
+                    foreach (var c in definition.Children)
                     {
-                        if (m.Type.Code == (ushort)Code.BOOL)
-                            WriteTagBuffer(tag, m, dict[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                        if (c.TypeCode == (ushort)Code.BOOL)
+                            WriteTagBuffer(tag, c, dict[c.Name], ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
                         else
-                            WriteTagBuffer(tag, m, dict[m.Name], offset + (int)m.Offset);
+                            WriteTagBuffer(tag, c, dict[c.Name], offset + (int)c.Offset);
                     }
                 }
             }
             else
             {
-                PrimitiveValueWriter(tag, definition.Type.Code, value, offset);
+                PrimitiveValueWriter(tag, definition.TypeCode, value, offset);
             }
         }
     }

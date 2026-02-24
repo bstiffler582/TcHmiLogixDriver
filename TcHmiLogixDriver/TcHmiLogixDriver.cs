@@ -164,7 +164,7 @@ namespace TcHmiLogixDriver
                 // browse tags
                 if (config.tagBrowser)
                 {
-                    var tags = driver.LoadTags(config.tagProgramFilter);
+                    var tags = driver.LoadTags();
 
                     // cache tags
                     // may want to encode or compress this - large entries here may be causing server crash

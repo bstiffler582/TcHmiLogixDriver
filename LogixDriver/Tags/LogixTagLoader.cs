@@ -1,3 +1,5 @@
+using libplctag;
+
 namespace Logix.Tags
 {
     public interface ILogixTagLoader
@@ -8,109 +10,86 @@ namespace Logix.Tags
 
     public class LogixTagLoader : ILogixTagLoader
     {
-        
         public IEnumerable<TagDefinition> LoadAllTagDefinitions(LogixTarget target, ILogixTagReader reader)
         {
-            var typeCache = new Dictionary<ushort, TypeDefinition>();
-            var typeResolver = new LogixTypeResolver(target, reader, typeCache);
-            var tagInfos = reader.ReadTagList(target);
+            var typeResolver = new LogixTypeResolver(target, reader);
+            var baseTags = ReadAllBaseTags(target, reader);
 
-            var controllerTags = tagInfos
-                    .Where(tag =>
-                        !tag.Name.StartsWith("Program:") &&
-                        !LogixTypes.IsSystem(tag.Type))
-                    .Select(tag => new TagDefinition(tag.Name, typeResolver.Resolve(tag, true)))
-                    .ToList();
-
-            var programTags = tagInfos
-                .Where(tag => tag.Name.StartsWith("Program:"))
-                .Select(tag =>
-                {
-                    var progTagInfos = reader.ReadProgramTags(target, tag.Name);
-                    var progTags = progTagInfos
-                        .Where(t => !LogixTypes.IsSystem(t.Type))
-                        .Select(tag => new TagDefinition(tag.Name, typeResolver.Resolve(tag, true)))
-                        .ToList();
-                    return new TagDefinition(tag.Name, new TypeDefinition(tag.Type, tag.Length, tag.Name, Array.Empty<uint>(), progTags));
-                })
+            var resolved = baseTags
+                .Select(tag => typeResolver.Resolve(tag, true))
                 .ToList();
 
-            return programTags.Concat(controllerTags);
+            target.AddTagDefinition(resolved);
+
+            return resolved;
+        }
+
+        private IEnumerable<TagDefinition> ReadAllBaseTags(LogixTarget target, ILogixTagReader reader)
+        {
+            var tagDefs = reader.ReadTagList(target);
+            return tagDefs.Where(tag => tag.Name.StartsWith("Program:") || !LogixTypes.IsSystem(tag.TypeCode));
         }
 
         // Load individual tag definition
         public TagDefinition LoadTagDefinition(string tagName, LogixTarget target, ILogixTagReader reader)
         {
-            var path = tagName
-                .Replace('[', '.')
-                .Replace(']', '.')
-                .Split('.')
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToArray();
+            throw new NotImplementedException();
+            //if (target.TagDefinitionsFlat.TryGetValue(tagName, out var tagDef))
+            //    return tagDef;
 
-            if (path.Length < 1)
-                throw new ArgumentException("Invalid tag name");
+            //if (target.TagDefinitions.Count == 0)
+            //    target.AddTagDefinition(ReadAllBaseTags(target, reader));
 
-            IEnumerable<TagInfo> tags;
-            int index = 0;
+            //var pathParts = tagName
+            //    .Replace('[', '.')
+            //    .Replace(']', '.')
+            //    .Split('.')
+            //    .Where(s => !string.IsNullOrEmpty(s))
+            //    .ToArray();
 
-            if (path[0].StartsWith("Program:"))
-            {
-                tags = reader.ReadProgramTags(target, path[0]);
-                index++;
-            }
-            else
-                tags = reader.ReadTagList(target);
+            //if (pathParts.Length < 1)
+            //    throw new ArgumentException("Invalid tag name");
 
-            var root = tags.FirstOrDefault(t => t.Name == path[index]);
+            //if (!target.TagDefinitions.TryGetValue(pathParts[0], out var root))
+            //    throw new Exception($"Root tag {pathParts[0]} not found.");
 
-            if (tags.Count() < 1 || root is null)
-                throw new Exception($"No tags match {tagName}.");
+            //var typeResolver = new LogixTypeResolver(target, reader);
 
-            var typeResolver = new LogixTypeResolver(target, reader);
+            //var type = ResolveNestedMember(root, new Queue<string>(pathParts.Skip(1)), typeResolver);
 
-            if (path.Length > index + 1)
-            {
-                var baseType = typeResolver.Resolve(root, deep: false);
-                var type = ResolveTypeByPath(baseType, new Stack<string>(path.Skip(index + 1).Reverse()), typeResolver);
-                return new TagDefinition(tagName, type);
-            }
-            else
-            {
-                return new TagDefinition(tagName, typeResolver.Resolve(root, deep: true));
-            }
+            //root = new TagDefinition(root.Name, type, root.Offset, root.BitOffset);
+
+            //return root;
         }
 
-        private TypeDefinition ResolveTypeByPath(TypeDefinition parent, Stack<string> path, LogixTypeResolver typeResolver)
-        {
-            // Base case: no more path segments to traverse
-            if (path.Count == 0)
-            {
-                // Deep resolve the terminal type
-                var terminalTagInfo = new TagInfo
-                {
-                    Type = parent.Code,
-                    Dimensions = parent.Dimensions ?? Array.Empty<uint>()
-                };
-                return typeResolver.Resolve(terminalTagInfo, deep: true);
-            }
+        //private TypeDefinition ResolveNestedMember(TagDefinition tag, Queue<string> path, LogixTypeResolver resolver)
+        //{
+        //    if (path.Count == 0)
+        //        return resolver.Resolve(tag, deep: true);
 
-            // Recursive case: navigate to the next member
-            var segment = path.Pop();
-            var member = parent.Members?.FirstOrDefault(m => m.Name == segment);
+        //    var segment = path.Dequeue();
 
-            if (member is null)
-                throw new Exception($"Member '{segment}' not found in type '{parent.Name}'");
+        //    var shallowType = resolver.Resolve(tag, deep: false);
 
-            // Continue recursing with shallow resolution for navigation
-            var memberTagInfo = new TagInfo
-            {
-                Type = member.Type.Code,
-                Dimensions = member.Type.Dimensions ?? Array.Empty<uint>()
-            };
-            var memberType = typeResolver.Resolve(memberTagInfo, deep: false);
+        //    var member = shallowType.Members?.FirstOrDefault(m => m.Name == segment);
+        //    if (member == null)
+        //        throw new Exception($"Member '{segment}' not found in type '{shallowType.Name}'");
 
-            return ResolveTypeByPath(memberType, path, typeResolver);
-        }
+        //    var resolvedMemberType = ResolveNestedMember(member, path, resolver);
+
+        //    var updatedMembers = shallowType.Members!
+        //        .Select(m => m.Name == segment
+        //            ? new TagDefinition(m.Name, resolvedMemberType, m.Offset, m.BitOffset)
+        //            : m)
+        //        .ToList();
+
+        //    return new TypeDefinition(
+        //        shallowType.Code,
+        //        shallowType.Length,
+        //        shallowType.Name,
+        //        shallowType.Dimensions,
+        //        updatedMembers
+        //    );
+        //}
     }
 }

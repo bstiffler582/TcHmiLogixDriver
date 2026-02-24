@@ -24,13 +24,18 @@ namespace Logix
         }
 
         /// <summary>
-        /// Read tag info and build tag definitions
+        /// Read tag info and build tag definitions.
         /// </summary>
-        /// <returns>Mutates Target</returns>
-        public IEnumerable<TagDefinition> LoadTags(string selector = "*")
+        /// <returns>List of tag definitions</returns>
+        public IEnumerable<TagDefinition> LoadTags(IEnumerable<string>? tagNames = null)
         {
-            var tags = TagLoader.LoadAllTagDefinitions(Target, TagReader);
-            Target.AddTagDefinition(tags);
+            IEnumerable<TagDefinition> tags;
+
+            if (tagNames is null)
+                tags = TagLoader.LoadAllTagDefinitions(Target, TagReader);
+            else
+                tags = tagNames.Select(t => TagLoader.LoadTagDefinition(t, Target, TagReader)).ToList();
+
             return tags;
         }
 
@@ -44,10 +49,10 @@ namespace Logix
 
             if (!tagCache.TryGetValue(tagName, out var tag))
             {
-                if (definition.Type.IsArray())
+                if (definition.IsArray)
                 {
                     var readPath = ResolveArrayPath(tagName, definition);
-                    tag = TagReader.CreateTag(Target, readPath, definition.Type.ElementCount());
+                    tag = TagReader.CreateTag(Target, readPath, definition.ElementCount());
                 }
                 else
                 {
@@ -63,10 +68,10 @@ namespace Logix
         {
             var member = definition;
             var path = tagName;
-            while (member is not null && member.Type.IsArray())
+            while (member is not null && member.IsArray)
             {
                 path += "[0]";
-                member = member.Type.Members?.First();
+                member = member.Children?.First();
             }
 
             return path;

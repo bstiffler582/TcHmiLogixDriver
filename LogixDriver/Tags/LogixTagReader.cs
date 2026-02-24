@@ -4,18 +4,18 @@ namespace Logix.Tags
 {
     public interface ILogixTagReader
     {
-        IEnumerable<TagInfo> ReadTagList(LogixTarget target);
-        UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId);
-        IEnumerable<TagInfo> ReadProgramTags(LogixTarget target, string program);
+        IEnumerable<TagDefinition> ReadTagList(LogixTarget target);
+        TypeDefinition ReadUdtInfo(LogixTarget target, ushort udtId);
+        IEnumerable<TagDefinition> ReadProgramTags(LogixTarget target, string program);
         Tag CreateTag(LogixTarget target, string path, int elementCount = 1);
         string ReadControllerInfo(LogixTarget target);
     }
 
     public class LogixTagReader : ILogixTagReader
     {
-        public IEnumerable<TagInfo> ReadTagList(LogixTarget target)
+        public IEnumerable<TagDefinition> ReadTagList(LogixTarget target)
         {
-            var tagList = new List<TagInfo>();
+            var tagList = new List<TagDefinition>();
 
             var controllerTags = CreateTag(target, "@tags");
             controllerTags.Read();
@@ -25,26 +25,26 @@ namespace Logix.Tags
             int offset = 0;
             while (offset < tagSize)
             {
-                var tagInfo = LogixTagDecoder.Decode(controllerTags, offset, out int elementSize);
-                tagList.Add(tagInfo);
+                var tagDef = LogixTagDecoder.Decode(controllerTags, offset, out int elementSize);
+                tagList.Add(tagDef);
                 offset += elementSize;
             }
 
             return tagList;
         }
 
-        public UdtInfo ReadUdtInfo(LogixTarget target, ushort udtId)
+        public TypeDefinition ReadUdtInfo(LogixTarget target, ushort udtId)
         {
             var tag = CreateTag(target, $"@udt/{udtId}");
             tag.Read();
-            var udtInfo = LogixTagDecoder.DecodeUdt(tag);
+            var typeDef = LogixTagDecoder.DecodeUdt(tag);
 
-            return udtInfo;
+            return typeDef;
         }
 
-        public IEnumerable<TagInfo> ReadProgramTags(LogixTarget target, string program)
+        public IEnumerable<TagDefinition> ReadProgramTags(LogixTarget target, string program)
         {
-            var tagList = new List<TagInfo>();
+            var tagList = new List<TagDefinition>();
 
             var programTags = CreateTag(target, $"{program}.@tags");
             programTags.Read();
@@ -54,8 +54,8 @@ namespace Logix.Tags
             int offset = 0;
             while (offset < tagSize)
             {
-                var tagInfo = LogixTagDecoder.Decode(programTags, offset, out int elementSize);
-                tagList.Add(tagInfo);
+                var tagDef = LogixTagDecoder.Decode(programTags, offset, out int elementSize);
+                tagList.Add(tagDef);
                 offset += elementSize;
             }
 

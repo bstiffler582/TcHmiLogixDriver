@@ -5,113 +5,107 @@ namespace Logix
 {
     public class LogixTypeResolver
     {
-        private readonly Dictionary<ushort, TypeDefinition> typeCache;
         private readonly LogixTarget target;
         private readonly ILogixTagReader tagReader;
 
-        public LogixTypeResolver(LogixTarget target, ILogixTagReader tagReader, Dictionary<ushort, TypeDefinition>? cache = null)
+        public LogixTypeResolver(LogixTarget target, ILogixTagReader tagReader)
         {
             this.target = target;
             this.tagReader = tagReader;
-            typeCache = cache ?? new Dictionary<ushort, TypeDefinition>();
         }
 
         /// <summary>
         /// Resolves custom and primitive types based on the TagInfo read from the CIP template object.
         /// </summary>
         /// <param name="tagInfo"></param>
-        /// <param name="deep">Recurse through nested types</param>
+        /// <param name="deep">Recurse through nested members</param>
         /// <returns></returns>
-        public TypeDefinition Resolve(TagInfo tagInfo, bool deep = true)
-            => ResolveInternal(tagInfo, deep);
+        public TagDefinition Resolve(TagDefinition tagDef, bool deep = true)
+            => ResolveInternal(tagDef, deep);
 
-        private TypeDefinition ResolveInternal(TagInfo tagInfo, bool deep)
+        private TagDefinition ResolveInternal(TagDefinition tagDef, bool deep)
         {
-            if (IsArray(tagInfo.Type))
-                return ResolveArray(tagInfo, deep);
-            else if (IsUdt(tagInfo.Type))
-                return ResolveUdt(tagInfo, deep);
+            if (IsArray(tagDef.TypeCode))
+                return ResolveArray(tagDef, deep);
+            else if (IsUdt(tagDef.TypeCode))
+                return ResolveUdt(tagDef, deep);
+            else if (tagDef.Name.StartsWith("Program:"))
+                return ResolveProgram(tagDef, deep);
             else
-                return ResolvePrimitive(tagInfo);
+                return ResolvePrimitive(tagDef);
         }
 
-        private TypeDefinition ResolveArray(TagInfo tagInfo, bool deep)
+        private TagDefinition ResolveProgram(TagDefinition tagDef, bool deep)
         {
-            var baseTypeCode = GetArrayBaseType(tagInfo.Type);
-            var baseType = ResolveInternal(new TagInfo { Type = baseTypeCode }, deep);
+            var progTagInfos = tagReader.ReadProgramTags(target, tagDef.Name);
 
-            var dims = tagInfo.Dimensions.Where(n => n > 0).ToArray();
-            return BuildArrayType(tagInfo.Type, baseType, dims);
-        }
-
-        private TypeDefinition BuildArrayType(ushort typeCode, TypeDefinition baseType, uint[] dims, int idx = 0)
-        {
-            if (idx >= dims.Length || dims[idx] == 0)
-                return baseType;
-
-            var child = BuildArrayType(typeCode, baseType, dims, idx + 1);
-            var dim = (int)dims[idx];
-            var members = Enumerable.Range(0, dim)
-                .Select(i => new TagDefinition($"{i}", child, (uint)i * child.Length))
+            var progTags = progTagInfos
+                .Where(t => !IsSystem(t.TypeCode))
+                .Select(tag => (deep) ? ResolveInternal(tag, true) : tag)
                 .ToList();
 
-            return new TypeDefinition(
-                typeCode,
+            return new TagDefinition(tagDef) { TypeName = "Program", Children = progTags };
+        }
+
+        private TagDefinition ResolveArray(TagDefinition tagDef, bool deep)
+        {
+            var baseTypeCode = GetArrayBaseType(tagDef.TypeCode);
+            var baseTag = ResolveInternal(new TagDefinition(tagDef) { TypeCode = baseTypeCode }, deep);
+
+            var dims = tagDef.Dimensions?.Where(n => n > 0).ToArray();
+            return BuildArrayType(tagDef, baseTag, dims, 0, deep);
+        }
+
+        private TagDefinition BuildArrayType(TagDefinition rootTag, TagDefinition baseTag, uint[]? dims, int idx = 0, bool deep = true)
+        {
+            if (dims is null || idx >= dims.Length || dims[idx] == 0)
+                return baseTag;
+
+            var child = BuildArrayType(rootTag, baseTag, dims, idx + 1);
+            var dim = (int)dims[idx];
+            var members = Enumerable.Range(0, dim)
+                .Select(i => new TagDefinition(child) 
+                { 
+                    Name = $"{i}", 
+                    Offset = (uint)i * child.Length
+                })
+                .ToList();
+
+            return new TagDefinition(
+                child.Name,
+                rootTag.TypeCode,
                 (uint)dim * child.Length,
-                $"ARRAY[{dim}] OF {child.Name}",
+                rootTag.Offset,
+                0,
+                $"ARRAY[{dim}] OF {child.TypeName}",
                 dims.Skip(idx).ToArray(),
                 members
             );
         }
 
-        private TypeDefinition ResolveUdt(TagInfo tagInfo, bool deep)
+        private TagDefinition ResolveUdt(TagDefinition tagDef, bool deep)
         {
-            var udtId = GetUdtId(tagInfo.Type);
-            if (typeCache.TryGetValue(udtId, out var cached))
-                return cached;
+            var udtId = GetUdtId(tagDef.TypeCode);
 
-            var udtInfo = tagReader.ReadUdtInfo(target, udtId);
-            var members = deep
-                ? ResolveMembersDeep(udtInfo)
-                : ResolveMembersShallow(udtInfo);
+            TypeDefinition typeDef;
+            if (target.TryGetCachedTypeDefinition(udtId, out var cached) && cached is not null)
+                typeDef = cached;
 
-            var udtDef = new TypeDefinition(tagInfo.Type, udtInfo.Size, udtInfo.Name, Array.Empty<uint>(), members);
-            if (deep) typeCache.Add(udtId, udtDef);
+            typeDef = tagReader.ReadUdtInfo(target, udtId);
+            var tagMembers = typeDef.Members?
+                .Select(TagDefinition.FromTypeMemberDefinition);
+            var members = (deep) ? tagMembers?.Select(m => ResolveInternal(m, true)) : tagMembers;
 
-            return udtDef;
+            if (cached is null)
+                target.CacheTypeDefinition(udtId, typeDef);
+
+            return new TagDefinition(tagDef) { Length = typeDef.Length, TypeName = typeDef.Name, Children = members?.ToList() };
         }
 
-        private List<TagDefinition> ResolveMembersDeep(UdtInfo udtInfo)
+        private TagDefinition ResolvePrimitive(TagDefinition tagDef)
         {
-            return udtInfo.Fields
-                .Select(m =>
-                {
-                    var memberInfo = new TagInfo
-                    {
-                        Type = m.Type,
-                        Dimensions = IsArray(m.Type) ? [m.Metadata] : [0]
-                    };
-                    var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
-                    return new TagDefinition(m.Name, ResolveInternal(memberInfo, deep: true), m.Offset, (uint)bitOffset);
-                }).ToList();
-        }
-
-        private List<TagDefinition> ResolveMembersShallow(UdtInfo udtInfo)
-        {
-            return udtInfo.Fields
-                .Select(m =>
-                {
-                    var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
-                    uint[] dimensions = IsArray(m.Type) ? [m.Metadata] : [0];
-                    var memberType = new TypeDefinition(m.Type, GetTypeLength(m.Type), ResolveTypeName(m.Type), dimensions);
-                    return new TagDefinition(m.Name, memberType, m.Offset, (uint)bitOffset);
-                }).ToList();
-        }
-
-        private TypeDefinition ResolvePrimitive(TagInfo tagInfo)
-        {
-            var length = (tagInfo.Length > 0) ? tagInfo.Length : GetTypeLength(tagInfo.Type);
-            return new TypeDefinition(tagInfo.Type, length, ResolveTypeName(tagInfo.Type));
+            var length = (tagDef.Length > 0) ? tagDef.Length : GetTypeLength(tagDef.TypeCode);
+            return new TagDefinition(tagDef) { Length = length, TypeName = ResolveTypeName(tagDef.TypeCode) };
         }
     }
 }

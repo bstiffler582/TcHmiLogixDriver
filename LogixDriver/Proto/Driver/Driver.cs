@@ -6,7 +6,7 @@ namespace Logix.Proto
     public class Driver : IDriver, IDisposable
     {
         public Target Target { get; }
-        public ILogixValueResolver ValueResolver { get; set; } = new LogixDefaultValueResolver();
+        public ITagValueResolver ValueResolver { get; set; } = new DefaultTagValueResolver();
         public bool IsConnected => isConnected;
         public ITagMetaProvider MetaProvider { get; set; }
 

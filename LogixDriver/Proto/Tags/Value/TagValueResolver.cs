@@ -1,28 +1,16 @@
 using libplctag;
-using static Logix.LogixTypes;
+using static Logix.Proto.TagMetaHelpers;
 
-namespace Logix
+namespace Logix.Proto
 {
-    public interface ILogixValueResolver 
-    {
-        Type ValueType { get; }
-        object ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
-        void WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset = 0);
-    }
-    public interface ILogixValueResolver<T> : ILogixValueResolver
-    {
-        new T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
-        void WriteTagBuffer(Tag tag, TagDefinition definition, T value, int offset = 0);
-    }
-
-    public abstract class LogixValueResolverBase<T> : ILogixValueResolver<T>
+    public abstract class TagValueResolverBase<T> : ITagValueResolver<T>
     {
         public Type ValueType => typeof(T);
         public abstract T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
         public abstract void WriteTagBuffer(Tag tag, TagDefinition definition, T value, int offset = 0);
-        object ILogixValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
+        object ITagValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
             => ResolveValue(tag, definition, offset) ?? default!;
-        void ILogixValueResolver.WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset)
+        void ITagValueResolver.WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset)
             => WriteTagBuffer(tag, definition, (T)value);
 
 
@@ -89,7 +77,7 @@ namespace Logix
         }
     }
 
-    public class LogixDefaultValueResolver : LogixValueResolverBase<object>
+    public class DefaultTagValueResolver : TagValueResolverBase<object>
     {
         public override object ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
         {

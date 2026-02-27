@@ -1,16 +1,23 @@
-﻿using static Logix.LogixTypes;
+﻿using Logix.Proto;
+using static Logix.LogixTypes;
 
-namespace Logix.Tags
+namespace Logix.Proto
 {
-    public class LogixTagTreeBuilder
+    /// <summary>
+    /// Progressively builds a controller's tag tree based on what tags are requested.
+    /// Defines TagDefinition parent->child relationships based on program/array/udt definitions.
+    /// </summary>
+    public class TagDefinitionExpander : ITagDefinitionExpander
     {
-        private readonly LogixTarget target;
-        private readonly ILogixTagReader tagReader;
+        private readonly ITagValueReaderWriter reader;
+        private readonly ITagMetaDecoder decoder;
+        private readonly ITagCache tagCache;
 
-        public LogixTagTreeBuilder(LogixTarget target, ILogixTagReader tagReader)
+        public TagDefinitionExpander(ITagValueReaderWriter readerWriter, ITagCache cache)
         {
-            this.target = target;
-            this.tagReader = tagReader;
+            this.reader = readerWriter;
+            this.tagCache = cache;
+            this.decoder = new TagMetaDecoder();
         }
 
         /// <summary>
@@ -18,9 +25,12 @@ namespace Logix.Tags
         /// </summary>
         /// <param name="rootNode">Top level node to expand</param>
         /// <param name="deep">Recurse through nested members</param>
-        /// <returns></returns>
-        public void ExpandNode(TagDefinition rootNode, bool deep = true)
-            => ExpandInternal(rootNode, deep);
+        /// <returns>The root node back</returns>
+        public TagDefinition ExpandTagDefinition(TagDefinition root, bool deep = true)
+        {
+            ExpandInternal(root, deep);
+            return root;
+        }
 
         private void ExpandInternal(TagDefinition tagDef, bool deep)
         {
@@ -50,7 +60,8 @@ namespace Logix.Tags
         {
             if (tagDef.ExpansionLevel == ExpansionLevel.None)
             {
-                var progTagInfos = tagReader.ReadProgramTags(target, tagDef.Name);
+                var programMetaTag = reader.ReadTag($"{tagDef.Name}.@tags");
+                var progTagInfos = decoder.DecodeProgramTags(programMetaTag!);
 
                 var programTags = progTagInfos
                     .Where(t => !IsSystem(t.TypeCode))
@@ -91,9 +102,9 @@ namespace Logix.Tags
             var child = BuildArrayType(rootTag, baseTag, dims, idx + 1);
             var dim = (int)dims[idx];
             var members = Enumerable.Range(0, dim)
-                .Select(i => new TagDefinition(child) 
-                { 
-                    Name = $"{i}", 
+                .Select(i => new TagDefinition(child)
+                {
+                    Name = $"{i}",
                     Offset = (uint)i * child.Length
                 })
                 .ToList();
@@ -117,10 +128,11 @@ namespace Logix.Tags
                 var udtId = GetUdtId(tagDef.TypeCode);
 
                 TypeDefinition typeDef;
-                if (target.TryGetCachedTypeDefinition(udtId, out var cached) && cached is not null)
+                if (tagCache.TryGetTypeDefinition(udtId, out var cached) && cached is not null)
                     typeDef = cached;
 
-                typeDef = tagReader.ReadUdtInfo(target, udtId);
+                var typeMetaTag = reader.ReadTag($"@udt/{udtId}");
+                typeDef = decoder.DecodeUdt(typeMetaTag!);
 
                 var tagMembers = typeDef.Members?
                     .Select(TagDefinition.FromTypeMemberDefinition)
@@ -133,7 +145,7 @@ namespace Logix.Tags
                 }
 
                 if (cached is null)
-                    target.CacheTypeDefinition(udtId, typeDef);
+                    tagCache.AddTypeDefinition(udtId, typeDef);
 
                 tagDef.Length = typeDef.Length;
                 tagDef.TypeName = typeDef.Name;

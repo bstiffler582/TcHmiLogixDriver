@@ -1,35 +1,35 @@
 ﻿using libplctag;
 using System.Threading.Channels;
 
-namespace Logix.Tags
+namespace Logix.Proto
 {
     /// <summary>
     /// Producer/consumer queues for managing async tag read/write operations.
     /// Ensures read/write operations are handled on a single task/thread.
     /// Executes cyclically with a max number of operations per cycle.
     /// </summary>
-    public class LogixTagReadWriteQueue : IDisposable
+    public class TagReadWriteQueue : ITagReadWriteQueue, IDisposable
     {
         private abstract record QueuedOperation(string TagName)
         {
-            public TaskCompletionSource<object?> CompletionSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public TaskCompletionSource<Tag?> CompletionSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        private sealed record ReadOperation(string TagName, TagDefinition Definition, Tag Tag) : QueuedOperation(TagName);
-        private sealed record WriteOperation(string TagName, TagDefinition Definition, Tag Tag, object Value) : QueuedOperation(TagName);
+        private sealed record ReadOperation(Tag Tag) : QueuedOperation(Tag.Name);
+        private sealed record WriteOperation(Tag Tag) : QueuedOperation(Tag.Name);
 
         private readonly ChannelWriter<ReadOperation> readChannelWriter;
         private readonly ChannelReader<ReadOperation> readChannelReader;
         private readonly ChannelWriter<WriteOperation> writeChannelWriter;
         private readonly ChannelReader<WriteOperation> writeChannelReader;
-        private readonly LogixDriver driver;
+        private readonly Driver driver;
         private Task? pollingTask;
         private CancellationTokenSource? pollingCts;
 
         // Track pending operations by tag name and type to prevent duplicates
         private readonly Dictionary<string, QueuedOperation> pendingOperations = new();
 
-        public LogixTagReadWriteQueue(LogixDriver driver, uint pollingRateMs = 100)
+        public TagReadWriteQueue(Driver driver, uint pollingRateMs = 100)
         {
             this.driver = driver;
 
@@ -58,17 +58,17 @@ namespace Logix.Tags
         /// Enqueue a read operation and return the value asynchronously.
         /// If a read for the same tag is already pending, returns the existing task.
         /// </summary>
-        public Task<object?> EnqueueReadAsync(string tagName, TagDefinition definition, Tag tag)
+        public Task<Tag?> EnqueueReadAsync(Tag tag)
         {
             lock (pendingOperations)
             {
-                var operationKey = $"READ:{tagName}";
+                var operationKey = $"READ:{tag.Name}";
 
                 // If operation already pending, return existing task
                 if (pendingOperations.TryGetValue(operationKey, out var existing) && existing is ReadOperation readOp)
                     return readOp.CompletionSource.Task;
 
-                var operation = new ReadOperation(tagName, definition, tag);
+                var operation = new ReadOperation(tag);
                 if (!readChannelWriter.TryWrite(operation))
                     throw new InvalidOperationException("Failed to enqueue read operation. Queue may be closed.");
 
@@ -80,9 +80,9 @@ namespace Logix.Tags
         /// <summary>
         /// Enqueue a read operation and wait synchronously for the result
         /// </summary>
-        public object? EnqueueReadSync(string tagName, TagDefinition definition, Tag tag)
+        public Tag? EnqueueReadSync(Tag tag)
         {
-            var task = EnqueueReadAsync(tagName, definition, tag);
+            var task = EnqueueReadAsync(tag);
             return task.GetAwaiter().GetResult();
         }
 
@@ -90,13 +90,13 @@ namespace Logix.Tags
         /// Enqueue a write operation and return completion asynchronously.
         /// Newer writes to the same tag replace older pending writes.
         /// </summary>
-        public Task EnqueueWriteAsync(string tagName, TagDefinition definition, Tag tag, object value)
+        public Task<Tag?> EnqueueWriteAsync(Tag tag)
         {
             lock (pendingOperations)
             {
-                var operationKey = $"WRITE:{tagName}";
+                var operationKey = $"WRITE:{tag.Name}";
 
-                var operation = new WriteOperation(tagName, definition, tag, value);
+                var operation = new WriteOperation(tag);
 
                 // If a write already exists for this tag, cancel it and replace with new one
                 if (pendingOperations.TryGetValue(operationKey, out var existing) && existing is WriteOperation)
@@ -115,10 +115,10 @@ namespace Logix.Tags
         /// <summary>
         /// Enqueue a write operation and wait synchronously for completion
         /// </summary>
-        public void EnqueueWriteSync(string tagName, TagDefinition definition, Tag tag, object value)
+        public Tag? EnqueueWriteSync(Tag tag)
         {
-            var task = EnqueueWriteAsync(tagName, definition, tag, value);
-            task.GetAwaiter().GetResult();
+            var task = EnqueueWriteAsync(tag);
+            return task.GetAwaiter().GetResult();
         }
 
         private void StartPolling(uint pollingRateMs)
@@ -174,16 +174,16 @@ namespace Logix.Tags
                 {
                     case ReadOperation readOp:
                         await readOp.Tag.ReadAsync(cancel);
-                        var value = driver.ValueResolver.ResolveValue(readOp.Tag, readOp.Definition);
-                        readOp.CompletionSource.TrySetResult(value);
+                        //var value = driver.ValueResolver.ResolveValue(readOp.Tag, readOp.Definition);
+                        readOp.CompletionSource.TrySetResult(readOp.Tag);
                         break;
 
                     case WriteOperation writeOp:
                         if (!writeOp.Tag.IsInitialized)
                             writeOp.Tag.Initialize();
-                        driver.ValueResolver.WriteTagBuffer(writeOp.Tag, writeOp.Definition, writeOp.Value);
+                        //driver.ValueResolver.WriteTagBuffer(writeOp.Tag, writeOp.Definition, writeOp.Value);
                         await writeOp.Tag.WriteAsync(cancel);
-                        writeOp.CompletionSource.TrySetResult(null);
+                        writeOp.CompletionSource.TrySetResult(writeOp.Tag);
                         break;
                 }
             }

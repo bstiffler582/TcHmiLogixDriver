@@ -10,7 +10,7 @@ namespace Logix.Tags
     {
         public IEnumerable<TagDefinition> LoadTagDefinitions(LogixTarget target, ILogixTagReader reader, bool deep = true)
         {
-            var treeBuilder = new LogixTagTreeBuilder(target, reader);
+            var treeBuilder = new LogixTagDefinitionExpander(target, reader);
             var baseTags = ReadAllBaseTags(target, reader);
 
             if (deep)
@@ -46,7 +46,7 @@ namespace Logix.Tags
             if (!target.TagDefinitions.TryGetValue(pathParts[0], out var root))
                 throw new Exception($"Root tag {pathParts[0]} not found.");
 
-            var treeBuilder = new LogixTagTreeBuilder(target, reader);
+            var treeBuilder = new LogixTagDefinitionExpander(target, reader);
             var pathQueue = new Queue<string>(pathParts.Skip(1));
 
             TagDefinition tag = root;

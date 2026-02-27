@@ -53,7 +53,7 @@
         public static TagDefinition FromTypeMemberDefinition(TypeMemberDefinition typeMember)
         {
             return new TagDefinition(
-                typeMember.Name, 
+                typeMember.Name,
                 typeMember.Code, 
                 LogixTypes.GetTypeLength(typeMember.Code), 
                 typeMember.Offset, 

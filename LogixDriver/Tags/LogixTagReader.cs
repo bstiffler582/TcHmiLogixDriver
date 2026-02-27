@@ -11,6 +11,9 @@ namespace Logix.Tags
         string ReadControllerInfo(LogixTarget target);
     }
 
+    /// <summary>
+    /// Helper class for reading and decoding tag requests.
+    /// </summary>
     public class LogixTagReader : ILogixTagReader
     {
         public IEnumerable<TagDefinition> ReadTagList(LogixTarget target)

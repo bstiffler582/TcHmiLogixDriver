@@ -1,17 +1,45 @@
 ﻿using libplctag;
 using System.Text;
-using static Logix.LogixTypes;
+using static Logix.Proto.TagMetaHelpers;
 
-namespace Logix.Tags
+namespace Logix.Proto
 {
-    /// <summary>
-    /// Contains the byte plumbing functions for turning raw CIP requests into Tag / Type definitions.
-    /// </summary>
-    public static class LogixTagDecoder
+    public class TagMetaDecoder : ITagMetaDecoder
     {
-        const int TAG_STRING_SIZE = 200;
+        public IEnumerable<TagDefinition> DecodeControllerTags(Tag tag)
+        {
+            var tagList = new List<TagDefinition>();
 
-        public static TagDefinition Decode(Tag tag, int offset, out int elementSize)
+            var tagSize = tag.GetSize();
+
+            int offset = 0;
+            while (offset < tagSize)
+            {
+                var tagDef = DecodeTag(tag, offset, out int elementSize);
+                tagList.Add(tagDef);
+                offset += elementSize;
+            }
+
+            return tagList;
+        }
+
+        public IEnumerable<TagDefinition> DecodeProgramTags(Tag tag)
+        {
+            var tagList = new List<TagDefinition>();
+            var tagSize = tag.GetSize();
+
+            int offset = 0;
+            while (offset < tagSize)
+            {
+                var tagDef = DecodeTag(tag, offset, out int elementSize);
+                tagList.Add(tagDef);
+                offset += elementSize;
+            }
+
+            return tagList;
+        }
+
+        public TagDefinition DecodeTag(Tag tag, int offset, out int elementSize)
         {
             var tagInstanceId = tag.GetUInt32(offset);
             var tagType = tag.GetUInt16(offset + 4);
@@ -23,6 +51,7 @@ namespace Logix.Tags
                 tag.GetUInt32(offset + 16)
             };
 
+            const int TAG_STRING_SIZE = 200;
             var apparentTagNameLength = (int)tag.GetUInt16(offset + 20);
             var actualTagNameLength = Math.Min(apparentTagNameLength, TAG_STRING_SIZE * 2 - 1);
 
@@ -38,9 +67,8 @@ namespace Logix.Tags
             return new TagDefinition(tagName, tagType, tagLength, (uint)offset, 0, ResolveTypeName(tagType), tagArrayDims);
         }
 
-        public static TypeDefinition DecodeUdt(Tag tag)
+        public TypeDefinition DecodeUdt(Tag tag)
         {
-
             var template_id = tag.GetUInt16(0);
             var member_desc_size = tag.GetUInt32(2);
             var udt_instance_size = tag.GetUInt32(6);
@@ -100,8 +128,21 @@ namespace Logix.Tags
 
             return new TypeDefinition(udtInfo.Id, udtInfo.Size, udtInfo.Name, members);
         }
-    }
 
+        public string DecodeControllerInfo(Tag tag)
+        {
+            var buffer = tag.GetBuffer();
+
+            var offset = 10;
+            var major = buffer[offset].ToString();
+            offset += 1;
+            var minor = buffer[offset].ToString();
+            offset += 8;
+            var model = Encoding.ASCII.GetString(buffer, offset, buffer.Length - offset).TrimEnd('\0');
+
+            return $"{model} v{major}.{minor}";
+        }
+    }
     internal class UdtFieldInfo
     {
         public string Name { get; set; } = "";

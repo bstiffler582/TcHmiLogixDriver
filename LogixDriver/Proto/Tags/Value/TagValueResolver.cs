@@ -19,7 +19,8 @@ namespace Logix.Proto
             return (Code)(typeCode) switch
             {
                 Code.BOOL => tag.GetBit(offset),
-                Code.SINT or Code.USINT => tag.GetInt8(offset),
+                Code.SINT => tag.GetInt8(offset),
+                Code.USINT => tag.GetUInt8(offset),
                 Code.INT or Code.UINT or Code.WORD => tag.GetInt16(offset),
                 Code.DINT or Code.UDINT or Code.DWORD => tag.GetInt32(offset),
                 Code.LINT or Code.ULINT or Code.LWORD => tag.GetInt64(offset),

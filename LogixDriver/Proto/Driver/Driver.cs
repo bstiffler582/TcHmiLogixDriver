@@ -8,57 +8,54 @@ namespace Logix.Proto
         public Target Target { get; }
         public ITagValueResolver ValueResolver { get; set; } = new DefaultTagValueResolver();
         public bool IsConnected => isConnected;
-        public ITagMetaProvider MetaProvider { get; set; }
+        private readonly ITagMetaProvider metaProvider;
+        private readonly ITagReadWriteQueue readWriteQueue;
+        private readonly ITagDefinitionCache tagCache = new TagDefinitionCache();
+        private readonly ITagMetaDecoder metaDecoder = new TagMetaDecoder();
 
-        private ITagCache? tagCache;
-        private ITagReadWriteQueue? readWriteQueue;
-        private ITagMetaDecoder? metaDecoder;
-        private bool isConnected = true;
+        private volatile bool isConnected = true;
 
         private const string EX_ERR_TIMEOUT = "ErrorTimeout";
 
         public Driver(Target target)
         {
             Target = target;
-            MetaProvider = new TagMetaProvider(this);
-            Initialize();
+            metaProvider = new TagMetaProvider(this, tagCache);
+            readWriteQueue = new TagReadWriteQueue(this, 50);
         }
 
         public Driver(string name, string gateway, string path, PlcType plcType = PlcType.ControlLogix)
         {
             Target = new Target(name, gateway, path, plcType);
-            MetaProvider = new TagMetaProvider(this);
-            Initialize();
+            metaProvider = new TagMetaProvider(this, tagCache);
+            readWriteQueue = new TagReadWriteQueue(this, 50);
         }
 
-        private void Initialize()
+        public async Task LoadTagsAsync(IEnumerable<string>? tagFilter = null)
         {
-            tagCache = new TagCache();
-            readWriteQueue = new TagReadWriteQueue(this);
-            metaDecoder = new TagMetaDecoder();
+            var tags = await metaProvider.LoadTagDefinitionsAsync(tagFilter);
+            foreach (var tag in tags)
+                tagCache.AddTagDefinition(tag);
         }
 
-        public void LoadTags(IEnumerable<string>? tagNames = null)
+        public void LoadTags(IEnumerable<string>? tagFilter = null)
         {
-            
+            LoadTagsAsync(tagFilter).GetAwaiter().GetResult();
         }
 
-        public IEnumerable<TagDefinition> GetTagDefinitions()
+        public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitions()
         {
-            return tagCache!.GetTagDefinitions() ?? Enumerable.Empty<TagDefinition>();
+            return tagCache.GetTagDefinitionsFlat();
         }
 
-        public Task<Tag?> ReadTagAsync(string tagName)
+        public async Task<Tag> ReadTagAsync(string tagName)
         {
-            if (!tagCache!.TryGetTag(tagName, out var tag))
-            {
-                tag = CreateTag(tagName);
-            }
-
-            return readWriteQueue!.EnqueueReadAsync(tag!);
+            var tag = GetTag(tagName);
+            await tag.ReadAsync();
+            return tag;
         }
 
-        public Tag? ReadTag(string tagName) 
+        public Tag ReadTag(string tagName) 
         {
             return ReadTagAsync(tagName).GetAwaiter().GetResult();
         }
@@ -73,12 +70,16 @@ namespace Logix.Proto
             throw new NotImplementedException();
         }
 
-        public object ReadTagValue(string tagName)
+        public object? ReadTagValue(string tagName)
         {
-            throw new NotImplementedException();
+            var tag = GetTag(tagName);
+            var definition = GetDefinition(tagName);
+
+            tag = readWriteQueue.EnqueueReadSync(tag);
+            return ValueResolver.ResolveValue(tag, definition);
         }
 
-        public Task<object> ReadTagValueAsync(string tagName)
+        public Task<object?> ReadTagValueAsync(string tagName)
         {
             throw new NotImplementedException();
         }
@@ -103,12 +104,12 @@ namespace Logix.Proto
             try
             {
                 var rawPayload = new byte[] {
-                0x01, 0x02,
-                0x20, 0x01,
-                0x24, 0x01
-            };
+                    0x01, 0x02,
+                    0x20, 0x01,
+                    0x24, 0x01
+                };
 
-                var tag = CreateTag("@raw");
+                var tag = GetTag("@raw", cache: false);
 
                 tag.Initialize();
                 tag.SetSize(rawPayload.Length);
@@ -124,21 +125,39 @@ namespace Logix.Proto
             }
         }
 
-        private Tag CreateTag(string tagPath, int elementCount = 1, bool cache = true)
+        private TagDefinition GetDefinition(string tagPath)
         {
-            var tag = new Tag
+            if (tagCache.TryGetTagDefinition(tagPath, out var cached) && cached is not null)
             {
-                Gateway = Target.Gateway,
-                Path = Target.Path,
-                PlcType = Target.PlcType,
-                Protocol = Protocol.ab_eip,
-                Name = tagPath,
-                ElementCount = elementCount,
-                Timeout = TimeSpan.FromMilliseconds(Target.TimeoutMs)
-            };
+                return cached;
+            }
+            else
+            {
+                var definition = metaProvider.LoadTagDefinition(tagPath);
+                return definition;
+            }
+        }
+
+        private Tag GetTag(string tagPath, int elementCount = 1, bool cache = true)
+        {
+            Tag tag;
+
+            if (!tagCache.TryGetTag(tagPath, out tag!))
+            {
+                tag = new Tag
+                {
+                    Gateway = Target.Gateway,
+                    Path = Target.Path,
+                    PlcType = Target.PlcType,
+                    Protocol = Protocol.ab_eip,
+                    Name = tagPath,
+                    ElementCount = elementCount,
+                    Timeout = TimeSpan.FromMilliseconds(Target.TimeoutMs)
+                };
+            }
 
             if (cache)
-                tagCache?.AddTag(tagPath, tag);
+                tagCache.AddTag(tagPath, tag);
 
             return tag;
         }

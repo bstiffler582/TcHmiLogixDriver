@@ -1,22 +1,24 @@
-﻿namespace Logix.Proto
+﻿
+namespace Logix.Proto
 {
     public class TagMetaProvider : ITagMetaProvider
     {
-        private ITagMetaDecoder? decoder;
-        private ITagValueReaderWriter? reader;
-        private ITagDefinitionExpander? definitionExpander;
+        private readonly ITagMetaDecoder decoder;
+        private readonly ITagValueReader reader;
+        private readonly ITagDefinitionExpander definitionExpander;
 
-        public TagMetaProvider(ITagValueReaderWriter readerWriter)
+        public TagMetaProvider(ITagValueReader reader, ITagDefinitionCache tagCache)
         {
-            this.reader = readerWriter;
+            this.reader = reader;
+            definitionExpander = new TagDefinitionExpander(reader, tagCache);
             decoder = new TagMetaDecoder();
         }
 
-        public IEnumerable<TagDefinition> LoadTagDefinitions(IEnumerable<string>? tagNames = null, bool deep = true)
+        public async Task<IEnumerable<TagDefinition>> LoadTagDefinitionsAsync(IEnumerable<string>? tagNames = null, bool deep = true)
         {
-            IEnumerable<TagDefinition>? tagDefinitions = ReadAndFilterBaseTags();
+            IEnumerable<TagDefinition>? tagDefinitions = await ReadAndFilterBaseTags();
 
-            // selective expansion
+            // TODO: selective expansion
             if (tagNames is null)
             {
 
@@ -25,13 +27,18 @@
             if (deep)
             {
                 foreach (var tag in tagDefinitions!)
-                    definitionExpander!.ExpandTagDefinition(tag, true);
+                    await definitionExpander!.ExpandTagDefinitionAsync(tag, true);
             }
 
-            return tagDefinitions ?? Enumerable.Empty<TagDefinition>();
+            return tagDefinitions;
         }
 
-        public void ExpandTagDefinition(TagDefinition tagDefinition, ITagValueReaderWriter reader)
+        public IEnumerable<TagDefinition> LoadTagDefinitions(IEnumerable<string>? tagNames = null, bool deep = true)
+        {
+            return LoadTagDefinitionsAsync(tagNames, deep).GetAwaiter().GetResult();
+        }
+
+        public Task<TagDefinition> LoadTagDefinitionAsync(string tagName, bool deep = true)
         {
             throw new NotImplementedException();
         }
@@ -41,10 +48,10 @@
             throw new NotImplementedException();
         }
 
-        private IEnumerable<TagDefinition>? ReadAndFilterBaseTags()
+        private async Task<IEnumerable<TagDefinition>> ReadAndFilterBaseTags()
         {
-            var tag = reader?.ReadTag("@tags");
-            return decoder?.DecodeControllerTags(tag!)
+            var tag = await reader.ReadTagAsync("@tags");
+            return decoder.DecodeControllerTags(tag!)
                 .Where(tag => tag.Name.StartsWith("Program:") || !LogixTypes.IsSystem(tag.TypeCode));
         }
     }

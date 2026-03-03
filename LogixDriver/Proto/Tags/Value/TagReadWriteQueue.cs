@@ -12,7 +12,7 @@ namespace Logix.Proto
     {
         private abstract record QueuedOperation(string TagName)
         {
-            public TaskCompletionSource<Tag?> CompletionSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public TaskCompletionSource<Tag> CompletionSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         private sealed record ReadOperation(Tag Tag) : QueuedOperation(Tag.Name);
@@ -58,7 +58,7 @@ namespace Logix.Proto
         /// Enqueue a read operation and return the value asynchronously.
         /// If a read for the same tag is already pending, returns the existing task.
         /// </summary>
-        public Task<Tag?> EnqueueReadAsync(Tag tag)
+        public Task<Tag> EnqueueReadAsync(Tag tag)
         {
             lock (pendingOperations)
             {
@@ -80,7 +80,7 @@ namespace Logix.Proto
         /// <summary>
         /// Enqueue a read operation and wait synchronously for the result
         /// </summary>
-        public Tag? EnqueueReadSync(Tag tag)
+        public Tag EnqueueReadSync(Tag tag)
         {
             var task = EnqueueReadAsync(tag);
             return task.GetAwaiter().GetResult();
@@ -90,7 +90,7 @@ namespace Logix.Proto
         /// Enqueue a write operation and return completion asynchronously.
         /// Newer writes to the same tag replace older pending writes.
         /// </summary>
-        public Task<Tag?> EnqueueWriteAsync(Tag tag)
+        public Task<Tag> EnqueueWriteAsync(Tag tag)
         {
             lock (pendingOperations)
             {
@@ -115,7 +115,7 @@ namespace Logix.Proto
         /// <summary>
         /// Enqueue a write operation and wait synchronously for completion
         /// </summary>
-        public Tag? EnqueueWriteSync(Tag tag)
+        public Tag EnqueueWriteSync(Tag tag)
         {
             var task = EnqueueWriteAsync(tag);
             return task.GetAwaiter().GetResult();

@@ -1,13 +1,10 @@
-﻿using libplctag;
-
-namespace Logix.Proto
+﻿namespace Logix.Proto
 {
-    public class TagCache : ITagCache
+    public class TagDefinitionCache : ITagDefinitionCache
     {
         private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
         private readonly Dictionary<string, TagDefinition> tagDefinitionsFlat = new();
         private readonly Dictionary<ushort, TypeDefinition> typeDefinitionCache = new();
-        private readonly Dictionary<string, Tag> tagCache = new();
 
         public void AddTagDefinition(TagDefinition tagDefinition)
         {
@@ -18,12 +15,14 @@ namespace Logix.Proto
                 tagDefinitionsFlat.TryAdd(t.Path, t.TagDef);
         }
 
-        public IEnumerable<TagDefinition> GetTagDefinitions(bool flattened = false)
+        public IEnumerable<TagDefinition> GetTagDefinitions()
         {
-            if (flattened)
-                return tagDefinitionsFlat.Values;
-            else
-                return tagDefinitions.Values;
+            return tagDefinitions.Values;
+        }
+
+        public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitionsFlat()
+        {
+            return tagDefinitionsFlat;
         }
 
         public bool TryGetTagDefinition(string tagName, out TagDefinition? tagDefinition)
@@ -59,16 +58,6 @@ namespace Logix.Proto
                 foreach (var child in node.Children.SelectMany(c => Flatten(c, fullPath)))
                     yield return child;
             }
-        }
-
-        public void AddTag(string tagPath, Tag tag)
-        {
-            tagCache.TryAdd(tagPath, tag);
-        }
-
-        public bool TryGetTag(string tagPath, out Tag? tag)
-        {
-            return tagCache.TryGetValue(tagPath, out tag);
         }
     }
 }

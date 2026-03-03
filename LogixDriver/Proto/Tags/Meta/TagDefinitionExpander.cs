@@ -1,5 +1,4 @@
-﻿using Logix.Proto;
-using static Logix.LogixTypes;
+﻿using static Logix.LogixTypes;
 
 namespace Logix.Proto
 {
@@ -9,15 +8,20 @@ namespace Logix.Proto
     /// </summary>
     public class TagDefinitionExpander : ITagDefinitionExpander
     {
-        private readonly ITagValueReaderWriter reader;
+        private readonly ITagValueReader reader;
         private readonly ITagMetaDecoder decoder;
-        private readonly ITagCache tagCache;
+        private readonly ITagDefinitionCache tagCache;
 
-        public TagDefinitionExpander(ITagValueReaderWriter readerWriter, ITagCache cache)
+        public TagDefinitionExpander(ITagValueReader reader, ITagDefinitionCache cache)
         {
-            this.reader = readerWriter;
+            this.reader = reader;
             this.tagCache = cache;
             this.decoder = new TagMetaDecoder();
+        }
+
+        public TagDefinition ExpandTagDefinition(TagDefinition root, bool deep = true)
+        {
+            return ExpandTagDefinitionAsync(root, deep).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -26,13 +30,13 @@ namespace Logix.Proto
         /// <param name="rootNode">Top level node to expand</param>
         /// <param name="deep">Recurse through nested members</param>
         /// <returns>The root node back</returns>
-        public TagDefinition ExpandTagDefinition(TagDefinition root, bool deep = true)
+        public async Task<TagDefinition> ExpandTagDefinitionAsync(TagDefinition root, bool deep = true)
         {
-            ExpandInternal(root, deep);
+            await ExpandInternal(root, deep);
             return root;
         }
 
-        private void ExpandInternal(TagDefinition tagDef, bool deep)
+        private async Task ExpandInternal(TagDefinition tagDef, bool deep)
         {
             if (tagDef.ExpansionLevel == ExpansionLevel.Deep)
                 return;
@@ -41,11 +45,11 @@ namespace Logix.Proto
                 return;
 
             if (IsArray(tagDef.TypeCode))
-                ExpandArray(tagDef, deep);
+                await ExpandArray(tagDef, deep);
             else if (IsUdt(tagDef.TypeCode))
-                ExpandUdt(tagDef, deep);
+                await ExpandUdt(tagDef, deep);
             else if (tagDef.Name.StartsWith("Program:"))
-                ExpandProgram(tagDef, deep);
+                await ExpandProgram(tagDef, deep);
             else
             {
                 ExpandPrimitive(tagDef);
@@ -56,11 +60,11 @@ namespace Logix.Proto
             tagDef.ExpansionLevel = deep ? ExpansionLevel.Deep : ExpansionLevel.Shallow;
         }
 
-        private void ExpandProgram(TagDefinition tagDef, bool deep)
+        private async Task ExpandProgram(TagDefinition tagDef, bool deep)
         {
             if (tagDef.ExpansionLevel == ExpansionLevel.None)
             {
-                var programMetaTag = reader.ReadTag($"{tagDef.Name}.@tags");
+                var programMetaTag = await reader.ReadTagAsync($"{tagDef.Name}.@tags");
                 var progTagInfos = decoder.DecodeProgramTags(programMetaTag!);
 
                 var programTags = progTagInfos
@@ -73,17 +77,17 @@ namespace Logix.Proto
             if (deep)
             {
                 foreach (var c in tagDef.Children!)
-                    ExpandInternal(c, true);
+                    await ExpandInternal(c, true);
             }
             
             tagDef.TypeName = "Program";
         }
 
-        private void ExpandArray(TagDefinition tagDef, bool deep)
+        private async Task ExpandArray(TagDefinition tagDef, bool deep)
         {
             var baseTypeCode = GetArrayBaseType(tagDef.TypeCode);
             var baseTag = new TagDefinition(tagDef) { TypeCode = baseTypeCode };
-            ExpandInternal(baseTag, deep);
+            await ExpandInternal(baseTag, deep);
 
             var dims = tagDef.Dimensions?.Where(n => n > 0).ToArray();
             var arrayNode = BuildArrayType(tagDef, baseTag, dims, 0);
@@ -121,7 +125,7 @@ namespace Logix.Proto
             );
         }
 
-        private void ExpandUdt(TagDefinition tagDef, bool deep)
+        private async Task ExpandUdt(TagDefinition tagDef, bool deep)
         {
             if (tagDef.ExpansionLevel == ExpansionLevel.None)
             {
@@ -131,7 +135,7 @@ namespace Logix.Proto
                 if (tagCache.TryGetTypeDefinition(udtId, out var cached) && cached is not null)
                     typeDef = cached;
 
-                var typeMetaTag = reader.ReadTag($"@udt/{udtId}");
+                var typeMetaTag = await reader.ReadTagAsync($"@udt/{udtId}");
                 typeDef = decoder.DecodeUdt(typeMetaTag!);
 
                 var tagMembers = typeDef.Members?
@@ -141,7 +145,7 @@ namespace Logix.Proto
                 if (deep)
                 {
                     foreach (var member in tagMembers!)
-                        ExpandInternal(member, true);
+                        await ExpandInternal(member, true);
                 }
 
                 if (cached is null)
@@ -155,7 +159,7 @@ namespace Logix.Proto
             if (deep && tagDef.ExpansionLevel == ExpansionLevel.Shallow)
             {
                 foreach (var child in tagDef.Children!)
-                    ExpandInternal(child, true);
+                    await ExpandInternal(child, true);
             }
         }
 

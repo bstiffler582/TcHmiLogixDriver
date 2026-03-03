@@ -96,7 +96,8 @@ namespace TcHmiLogixDriver.Logix
                 object write = (Code)(definition.Type.Code) switch
                 {
                     Code.BOOL => value.GetBool(),
-                    Code.SINT or Code.USINT or Code.BYTE => value.GetSByte(),
+                    Code.SINT => value.GetSByte(),
+                    Code.USINT or Code.BYTE => value.GetByte(),
                     Code.INT or Code.UINT or Code.WORD => value.GetInt16(),
                     Code.DINT or Code.UDINT or Code.DWORD => value.GetInt32(),
                     Code.LINT or Code.ULINT or Code.LWORD => value.GetInt64(),

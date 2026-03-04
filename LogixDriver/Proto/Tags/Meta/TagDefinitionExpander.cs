@@ -136,7 +136,7 @@ namespace Logix.Proto
                     typeDef = cached;
 
                 var typeMetaTag = await reader.ReadTagAsync($"@udt/{udtId}");
-                typeDef = decoder.DecodeUdt(typeMetaTag!);
+                typeDef = decoder.DecodeUdtMeta(typeMetaTag!);
 
                 var tagMembers = typeDef.Members?
                     .Select(TagDefinition.FromTypeMemberDefinition)

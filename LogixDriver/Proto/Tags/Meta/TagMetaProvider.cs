@@ -1,5 +1,4 @@
-﻿
-namespace Logix.Proto
+﻿namespace Logix.Proto
 {
     public class TagMetaProvider : ITagMetaProvider
     {

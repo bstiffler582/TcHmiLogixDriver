@@ -15,7 +15,7 @@ namespace Logix.Proto
             int offset = 0;
             while (offset < tagSize)
             {
-                var tagDef = DecodeTag(tag, offset, out int elementSize);
+                var tagDef = DecodeTagMeta(tag, offset, out int elementSize);
                 tagList.Add(tagDef);
                 offset += elementSize;
             }
@@ -31,7 +31,7 @@ namespace Logix.Proto
             int offset = 0;
             while (offset < tagSize)
             {
-                var tagDef = DecodeTag(tag, offset, out int elementSize);
+                var tagDef = DecodeTagMeta(tag, offset, out int elementSize);
                 tagList.Add(tagDef);
                 offset += elementSize;
             }
@@ -39,7 +39,7 @@ namespace Logix.Proto
             return tagList;
         }
 
-        public TagDefinition DecodeTag(Tag tag, int offset, out int elementSize)
+        public TagDefinition DecodeTagMeta(Tag tag, int offset, out int elementSize)
         {
             var tagInstanceId = tag.GetUInt32(offset);
             var tagType = tag.GetUInt16(offset + 4);
@@ -67,7 +67,7 @@ namespace Logix.Proto
             return new TagDefinition(tagName, tagType, tagLength, (uint)offset, 0, ResolveTypeName(tagType), tagArrayDims);
         }
 
-        public TypeDefinition DecodeUdt(Tag tag)
+        public TypeDefinition DecodeUdtMeta(Tag tag)
         {
             var template_id = tag.GetUInt16(0);
             var member_desc_size = tag.GetUInt32(2);

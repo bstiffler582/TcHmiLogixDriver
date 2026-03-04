@@ -8,7 +8,7 @@ namespace Logix.Proto
     /// Ensures read/write operations are handled on a single task/thread.
     /// Executes cyclically with a max number of operations per cycle.
     /// </summary>
-    public class TagReadWriteQueue : ITagReadWriteQueue, IDisposable
+    public class TagReadWriteQueue : ITagReadWriteQueue
     {
         private abstract record QueuedOperation(string TagName)
         {
@@ -17,24 +17,33 @@ namespace Logix.Proto
 
         private sealed record ReadOperation(Tag Tag) : QueuedOperation(Tag.Name);
         private sealed record WriteOperation(Tag Tag) : QueuedOperation(Tag.Name);
+        private sealed record InitializeOperation(Tag Tag) : QueuedOperation(Tag.Name);
 
         private readonly ChannelWriter<ReadOperation> readChannelWriter;
         private readonly ChannelReader<ReadOperation> readChannelReader;
+        private readonly ChannelWriter<InitializeOperation> initChannelWriter;
+        private readonly ChannelReader<InitializeOperation> initChannelReader;
         private readonly ChannelWriter<WriteOperation> writeChannelWriter;
         private readonly ChannelReader<WriteOperation> writeChannelReader;
-        private readonly Driver driver;
+        private readonly IConnectionState driver;
         private Task? pollingTask;
         private CancellationTokenSource? pollingCts;
 
         // Track pending operations by tag name and type to prevent duplicates
         private readonly Dictionary<string, QueuedOperation> pendingOperations = new();
 
-        public TagReadWriteQueue(Driver driver, uint pollingRateMs = 100)
+        public TagReadWriteQueue(IConnectionState connectionState, uint pollingRateMs = 100)
         {
-            this.driver = driver;
+            this.driver = connectionState;
 
             // Separate unbounded channels for reads and writes
             var readChannel = Channel.CreateUnbounded<ReadOperation>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+            var initChannel = Channel.CreateUnbounded<InitializeOperation>(new UnboundedChannelOptions
             {
                 SingleReader = true,
                 SingleWriter = false
@@ -48,6 +57,8 @@ namespace Logix.Proto
 
             readChannelWriter = readChannel.Writer;
             readChannelReader = readChannel.Reader;
+            initChannelWriter = initChannel.Writer;
+            initChannelReader = initChannel.Reader;
             writeChannelWriter = writeChannel.Writer;
             writeChannelReader = writeChannel.Reader;
 
@@ -83,6 +94,34 @@ namespace Logix.Proto
         public Tag EnqueueReadSync(Tag tag)
         {
             var task = EnqueueReadAsync(tag);
+            return task.GetAwaiter().GetResult();
+        }
+
+        public Task<Tag> EnqueueInitializeAsync(Tag tag)
+        {
+            lock (pendingOperations)
+            {
+                var operationKey = $"INIT:{tag.Name}";
+
+                var operation = new InitializeOperation(tag);
+
+                // If a write already exists for this tag, cancel it and replace with new one
+                if (pendingOperations.TryGetValue(operationKey, out var existing) && existing is InitializeOperation)
+                {
+                    existing.CompletionSource.TrySetCanceled();
+                }
+
+                if (!initChannelWriter.TryWrite(operation))
+                    throw new InvalidOperationException("Failed to enqueue initialize operation. Queue may be closed.");
+
+                pendingOperations[operationKey] = operation;
+                return operation.CompletionSource.Task;
+            }
+        }
+
+        public Tag EnqueueInitializeSync(Tag tag)
+        {
+            var task = EnqueueInitializeAsync(tag);
             return task.GetAwaiter().GetResult();
         }
 
@@ -141,7 +180,14 @@ namespace Logix.Proto
                     int processed = 0;
                     const int maxPerCycle = 100;
 
-                    // Process all writes first (higher priority)
+                    // Process all inits first (highest priority)
+                    while (processed < maxPerCycle && initChannelReader.TryRead(out var initOperation))
+                    {
+                        await ProcessOperation(initOperation, cancel);
+                        processed++;
+                    }
+
+                    // Process all writes next (higher priority)
                     while (processed < maxPerCycle && writeChannelReader.TryRead(out var writeOperation))
                     {
                         await ProcessOperation(writeOperation, cancel);
@@ -168,22 +214,29 @@ namespace Logix.Proto
 
         private async Task ProcessOperation(QueuedOperation operation, CancellationToken cancel)
         {
+            string operationKey = string.Empty;
+
             try
             {
                 switch (operation)
                 {
                     case ReadOperation readOp:
                         await readOp.Tag.ReadAsync(cancel);
-                        //var value = driver.ValueResolver.ResolveValue(readOp.Tag, readOp.Definition);
                         readOp.CompletionSource.TrySetResult(readOp.Tag);
+                        operationKey = $"READ:{operation.TagName}";
+                        break;
+
+                    case InitializeOperation initOp:
+                        if (!initOp.Tag.IsInitialized)
+                            await initOp.Tag.InitializeAsync(cancel);
+                        initOp.CompletionSource.TrySetResult(initOp.Tag);
+                        operationKey = $"INIT:{operation.TagName}";
                         break;
 
                     case WriteOperation writeOp:
-                        if (!writeOp.Tag.IsInitialized)
-                            writeOp.Tag.Initialize();
-                        //driver.ValueResolver.WriteTagBuffer(writeOp.Tag, writeOp.Definition, writeOp.Value);
                         await writeOp.Tag.WriteAsync(cancel);
                         writeOp.CompletionSource.TrySetResult(writeOp.Tag);
+                        operationKey = $"WRITE:{operation.TagName}";
                         break;
                 }
             }
@@ -196,9 +249,6 @@ namespace Logix.Proto
                 // Remove from pending tracking when complete
                 lock (pendingOperations)
                 {
-                    var operationKey = operation is ReadOperation
-                        ? $"READ:{operation.TagName}"
-                        : $"WRITE:{operation.TagName}";
                     pendingOperations.Remove(operationKey);
                 }
             }

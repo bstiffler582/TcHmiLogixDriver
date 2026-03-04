@@ -22,8 +22,10 @@ await driver.LoadTagsAsync();
 foreach (var def in driver.GetTagDefinitions().ToList())
     Console.WriteLine($"Path: {def.Key}; Type: {def.Value.TypeName}; Length: {def.Value.Length}; Offset: {def.Value.Offset}; BitOffset: {def.Value.BitOffset}");
 
-//var res = driver.ReadTagValue("ctrlrReadTest");
-//Console.WriteLine(JsonSerializer.Serialize(res));
+await driver.WriteTagValueAsync("ctrlrWriteTest.arrTest[1]", 100);
+
+var res = await driver.ReadTagValueAsync("ctrlrWriteTest");
+Console.WriteLine(JsonSerializer.Serialize(res));
 
 var info = driver.ReadControllerInfo();
 Console.WriteLine(info);

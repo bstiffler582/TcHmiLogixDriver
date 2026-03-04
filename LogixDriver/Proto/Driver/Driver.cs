@@ -1,41 +1,51 @@
 ﻿using libplctag;
-using System.Text;
 
 namespace Logix.Proto
 {
-    public class Driver : IDriver, IDisposable
+    public class Driver : IDriver, IConnectionState, IDisposable
     {
         public Target Target { get; }
-        public ITagValueResolver ValueResolver { get; set; } = new DefaultTagValueResolver();
+        public ITagValueResolver ValueResolver { get; set; }
         public bool IsConnected => isConnected;
+
         private readonly ITagMetaProvider metaProvider;
-        private readonly ITagReadWriteQueue readWriteQueue;
-        private readonly ITagDefinitionCache tagCache = new TagDefinitionCache();
+        private readonly ITagDefinitionCache tagDefinitionCache = new TagDefinitionCache();
+        private readonly ITagCache tagCache = new TagCache();
         private readonly ITagMetaDecoder metaDecoder = new TagMetaDecoder();
+        private readonly ITagReadWriteQueue? readWriteQueue;
+        private readonly ITagValueReader valueReader;
+        private readonly ITagValueWriter valueWriter;
 
         private volatile bool isConnected = true;
 
         private const string EX_ERR_TIMEOUT = "ErrorTimeout";
 
-        public Driver(Target target)
-        {
-            Target = target;
-            metaProvider = new TagMetaProvider(this, tagCache);
-            readWriteQueue = new TagReadWriteQueue(this, 50);
-        }
-
-        public Driver(string name, string gateway, string path, PlcType plcType = PlcType.ControlLogix)
+        public Driver(string name, string gateway, string path, PlcType plcType = PlcType.ControlLogix, ITagValueResolver? valueResolver = null, bool useReadWriteQueue = true)
         {
             Target = new Target(name, gateway, path, plcType);
-            metaProvider = new TagMetaProvider(this, tagCache);
-            readWriteQueue = new TagReadWriteQueue(this, 50);
+            ValueResolver = valueResolver ?? new DefaultTagValueResolver();
+
+            // bypass queue for reading tag metadata
+            metaProvider = new TagMetaProvider(new TagValueReader(Target), tagDefinitionCache);
+
+            if (useReadWriteQueue)
+            {
+                readWriteQueue = new TagReadWriteQueue(this, 50);
+                valueReader = new QueuedTagValueReader(Target, readWriteQueue);
+                valueWriter = new QueuedTagValueWriter(readWriteQueue);
+            }
+            else
+            {
+                valueReader = new TagValueReader(Target);
+                valueWriter = new TagValueWriter();
+            }
         }
 
         public async Task LoadTagsAsync(IEnumerable<string>? tagFilter = null)
         {
             var tags = await metaProvider.LoadTagDefinitionsAsync(tagFilter);
             foreach (var tag in tags)
-                tagCache.AddTagDefinition(tag);
+                tagDefinitionCache.AddTagDefinition(tag);
         }
 
         public void LoadTags(IEnumerable<string>? tagFilter = null)
@@ -43,31 +53,14 @@ namespace Logix.Proto
             LoadTagsAsync(tagFilter).GetAwaiter().GetResult();
         }
 
-        public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitions()
+        public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitionsFlat()
         {
-            return tagCache.GetTagDefinitionsFlat();
+            return tagDefinitionCache.GetTagDefinitionsFlat();
         }
 
-        public async Task<Tag> ReadTagAsync(string tagName)
+        public IEnumerable<TagDefinition> GetTagDefinitions()
         {
-            var tag = GetTag(tagName);
-            await tag.ReadAsync();
-            return tag;
-        }
-
-        public Tag ReadTag(string tagName) 
-        {
-            return ReadTagAsync(tagName).GetAwaiter().GetResult();
-        }
-
-        public Task<Tag> WriteTagAsync(string tagName, object value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Tag WriteTag(string tagName, object value)
-        {
-            throw new NotImplementedException();
+            return tagDefinitionCache.GetTagDefinitions();
         }
 
         public object? ReadTagValue(string tagName)
@@ -75,28 +68,45 @@ namespace Logix.Proto
             var tag = GetTag(tagName);
             var definition = GetDefinition(tagName);
 
-            tag = readWriteQueue.EnqueueReadSync(tag);
+            tag = valueReader.ReadTag(tag);
             return ValueResolver.ResolveValue(tag, definition);
         }
 
-        public Task<object?> ReadTagValueAsync(string tagName)
+        public async Task<object?> ReadTagValueAsync(string tagName)
         {
-            throw new NotImplementedException();
+            var tag = GetTag(tagName);
+            var definition = GetDefinition(tagName);
+
+            tag = await valueReader.ReadTagAsync(tag);
+            return ValueResolver.ResolveValue(tag, definition);
         }
 
-        public bool WriteTagValue(string tagName, object value)
+        public void WriteTagValue(string tagName, object value)
         {
-            throw new NotImplementedException();
+            var tag = GetTag(tagName);
+            var definition = GetDefinition(tagName);
+
+            if (!tag.IsInitialized)
+                tag = valueWriter.Initialize(tag);
+
+            ValueResolver.WriteTagBuffer(tag, definition, value);
+            tag = valueWriter.WriteTag(tag);
         }
 
-        public Task WriteTagValueAsync(string tagName, object value)
+        public async Task WriteTagValueAsync(string tagName, object value)
         {
-            throw new NotImplementedException();
+            var tag = GetTag(tagName);
+            var definition = GetDefinition(tagName);
+
+            if (!tag.IsInitialized)
+                tag = await valueWriter.InitializeAsync(tag);
+
+            ValueResolver.WriteTagBuffer(tag, definition, value);
+            tag = await valueWriter.WriteTagAsync(tag);
         }
 
         /// <summary>
-        /// Reads controller info
-        /// Bypasses read/write queue to control connection state
+        /// Direct read of controller info
         /// </summary>
         /// <returns>String with controller model and version</returns>
         public string ReadControllerInfo()
@@ -127,7 +137,7 @@ namespace Logix.Proto
 
         private TagDefinition GetDefinition(string tagPath)
         {
-            if (tagCache.TryGetTagDefinition(tagPath, out var cached) && cached is not null)
+            if (tagDefinitionCache.TryGetTagDefinition(tagPath, out var cached) && cached is not null)
             {
                 return cached;
             }
@@ -164,7 +174,7 @@ namespace Logix.Proto
 
         public void Dispose()
         {
-            throw new NotImplementedException();
+            readWriteQueue?.Dispose();
         }
     }
 }

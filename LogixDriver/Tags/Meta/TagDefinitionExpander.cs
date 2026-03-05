@@ -80,7 +80,7 @@ namespace Logix.Tags
                     await ExpandInternal(c, true);
             }
             
-            tagDef.TypeName = "Program";
+            tagDef.TypeName = tagDef.Name;
         }
 
         private async Task ExpandArray(TagDefinition tagDef, bool deep)
@@ -109,7 +109,8 @@ namespace Logix.Tags
                 .Select(i => new TagDefinition(child)
                 {
                     Name = $"{i}",
-                    Offset = (uint)i * child.Length
+                    Offset = (uint)i * child.Length,
+                    ExpansionLevel = baseTag.ExpansionLevel
                 })
                 .ToList();
 

@@ -1,4 +1,4 @@
-using Logix;
+using Logix.Driver;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -12,15 +12,14 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
-        private LogixDriver driver;
+        private IDriver driver;
         private LookupTrie<string> mappingTree;
         private ConcurrentDictionary<uint, HashSet<string>> subscriptionSymbols = new();
 
-        public LogixSymbol(LogixDriver driver)
+        public LogixSymbol(IDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
         {
             this.driver = driver;
-            driver.ValueResolver = new LogixSymbolValueResolver();
         }
 
         /// <summary>

@@ -20,15 +20,13 @@
           "description": "Connection timeout (ms)",
           "default": 1000
         },
-        "tagBrowser": {
-          "type": "boolean",
-          "description": "Use online tag browser",
-          "default": false
-        },
-        "tagProgramFilter": {
-          "type": "string",
-          "description": "Filter the tag browser to only show tags from a certain program (e.g. 'Program:HMI'). A value of '*' or '' loads all program and controller tags.",
-          "default": "*"
+        "tagSelector": {
+          "type": "array",
+          "description": "Filter the tag browser to only show select tags. An empty list loads all program and controller tags.",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
         },
         "tagDefinitionCache": {
           "type": "string",
@@ -37,7 +35,7 @@
           "visibility": "AlwaysHide"
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout", "tagBrowser", "tagFilterSelector" ]
+      "required": [ "targetAddress", "targetSlot", "timeout", "tagSelector" ]
     }
   },
   "properties": {

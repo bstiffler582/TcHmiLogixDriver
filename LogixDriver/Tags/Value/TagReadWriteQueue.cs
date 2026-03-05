@@ -26,17 +26,15 @@ namespace Logix.Tags
         private readonly ChannelReader<InitializeOperation> initChannelReader;
         private readonly ChannelWriter<WriteOperation> writeChannelWriter;
         private readonly ChannelReader<WriteOperation> writeChannelReader;
-        private readonly IConnectionState driver;
+        
         private Task? pollingTask;
         private CancellationTokenSource? pollingCts;
 
         // Track pending operations by tag name and type to prevent duplicates
         private readonly Dictionary<string, QueuedOperation> pendingOperations = new();
 
-        public TagReadWriteQueue(IConnectionState connectionState, uint pollingRateMs = 100)
+        public TagReadWriteQueue(uint pollingRateMs = 100)
         {
-            this.driver = connectionState;
-
             // Separate unbounded channels for reads and writes
             var readChannel = Channel.CreateUnbounded<ReadOperation>(new UnboundedChannelOptions
             {
@@ -175,9 +173,6 @@ namespace Logix.Tags
 
                 while (await timer.WaitForNextTickAsync(cancel))
                 {
-                    if (!driver.IsConnected)
-                        continue;
-
                     int processed = 0;
                     const int maxPerCycle = 100;
 
@@ -257,6 +252,7 @@ namespace Logix.Tags
 
         public void Dispose()
         {
+            initChannelWriter.TryComplete();
             writeChannelWriter.TryComplete();
             readChannelWriter.TryComplete();
             pollingCts?.Cancel();

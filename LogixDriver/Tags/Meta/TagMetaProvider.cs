@@ -22,7 +22,7 @@ namespace Logix.Tags
             IEnumerable<TagDefinition>? tagDefinitions = await ReadAndFilterBaseTags();
 
             // selective expansion
-            if (tagNames is not null)
+            if (tagNames is not null && tagNames.Count() > 0)
             {
                 foreach (var tagName in tagNames)
                     await LoadTagDefinitionAsync(tagName, tagDefinitions);

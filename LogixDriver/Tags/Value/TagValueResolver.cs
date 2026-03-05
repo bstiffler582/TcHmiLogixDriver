@@ -1,0 +1,166 @@
+using libplctag;
+using static Logix.Tags.TagMetaHelpers;
+
+namespace Logix.Tags
+{
+    public abstract class TagValueResolverBase<T> : ITagValueResolver<T>
+    {
+        public Type ValueType => typeof(T);
+        public abstract T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
+        public abstract void WriteTagBuffer(Tag tag, TagDefinition definition, T value, int offset = 0);
+        object ITagValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
+            => ResolveValue(tag, definition, offset) ?? default!;
+        void ITagValueResolver.WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset)
+            => WriteTagBuffer(tag, definition, (T)value);
+
+
+        protected object PrimitiveValueResolver(Tag tag, ushort typeCode, int offset = 0)
+        {
+            return (Code)(typeCode) switch
+            {
+                Code.BOOL => tag.GetBit(offset),
+                Code.SINT => tag.GetInt8(offset),
+                Code.USINT => tag.GetUInt8(offset),
+                Code.INT or Code.UINT or Code.WORD => tag.GetInt16(offset),
+                Code.DINT or Code.UDINT or Code.DWORD => tag.GetInt32(offset),
+                Code.LINT or Code.ULINT or Code.LWORD => tag.GetInt64(offset),
+                Code.REAL => tag.GetFloat32(offset),
+                Code.LREAL => tag.GetFloat64(offset),
+                Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
+                    => tag.GetString(offset),
+                _ => throw new Exception($"Primitive type code:{typeCode:X} not handled")
+            };
+        }
+
+        protected void PrimitiveValueWriter(Tag tag, ushort typeCode, object value, int offset = 0)
+        {
+            switch ((Code)typeCode)
+            {
+                case Code.BOOL: 
+                    tag.SetBit(offset, (bool)value);
+                    break;
+                case Code.SINT:
+                    tag.SetInt8(offset, (sbyte)value);
+                    break;
+                case Code.USINT or Code.BYTE:
+                    tag.SetUInt8(offset, (byte)value);
+                    break;
+                case Code.INT:
+                    tag.SetInt16(offset, (short)value);
+                    break;
+                case Code.UINT or Code.WORD:
+                    tag.SetUInt16(offset, (ushort)value);
+                    break;
+                case Code.DINT:
+                    tag.SetInt32(offset, (int)value);
+                    break;
+                case Code.UDINT or Code.DWORD:
+                    tag.SetUInt32(offset, (uint)value);
+                    break;
+                case Code.LINT:
+                    tag.SetInt64(offset, (long)value);
+                    break;
+                case Code.ULINT or Code.LWORD:
+                    tag.SetUInt64(offset, (ulong)value);
+                    break;
+                case Code.REAL:
+                    tag.SetFloat32(offset, (float)value);
+                    break;
+                case Code.LREAL:
+                    tag.SetFloat64(offset, (double)value);
+                    break;
+                case Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT:
+                    tag.SetString(offset, (string)value);
+                    break;
+                default:
+                    throw new Exception($"No primitive type resolver for TypeCode {typeCode}");
+            }
+        }
+    }
+
+    public class DefaultTagValueResolver : TagValueResolverBase<object>
+    {
+        public override object ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
+        {
+            if (IsArray(definition.TypeCode))
+            {
+                if (definition.Children is null || definition.Children.Count < 1)
+                    return 0;
+
+                var ret = new List<object>();
+                foreach (var m in definition.Children)
+                    ret.Add(ResolveValue(tag, m, offset + (int)m.Offset));
+
+                return ret;
+            }
+            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
+            {
+                if (definition.Children is null || definition.Children.Count < 1)
+                    return 0;
+
+                var ret = new Dictionary<string, object>();
+                foreach (var c in definition.Children)
+                {
+                    if (c.TypeCode == (ushort)Code.BOOL)
+                        ret[c.Name] = ResolveValue(tag, c, ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
+                    else
+                        ret[c.Name] = ResolveValue(tag, c, offset + (int)c.Offset);
+                }
+
+                return ret;
+            }
+            else
+            {
+                return PrimitiveValueResolver(tag, definition.TypeCode, offset);
+            }
+        }
+
+        public override void WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset = 0)
+        {
+            if (IsArray(definition.TypeCode))
+            {
+                if (definition.Children is null || definition.Children.Count < 1)
+                    return;
+
+                // cast object value to array
+                object[]? arr = null;
+                if (value.GetType() == typeof(IEnumerable<>))
+                    arr = (value as IEnumerable<object>)?.ToArray();
+                else if (value is Array genericArray)
+                    arr = genericArray.Cast<object>().ToArray();
+
+                if (arr is null) throw new Exception($"Unable to cast write value for array tag {tag.Name} to Enumerable.");
+
+                foreach (var c in definition.Children)
+                {
+                    {
+                        int.TryParse(c.Name, out var i);
+                        WriteTagBuffer(tag, c, arr[i], offset + (int)c.Offset);
+                    }
+                }
+            }
+            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
+            {
+                if (definition.Children is null || definition.Children.Count < 1)
+                    return;
+
+                if (value.GetType() == typeof(IDictionary<string, object>))
+                {
+                    var dict = value as IDictionary<string, object>;
+                    if (dict is null) throw new Exception($"Unable to cast write value for tag {tag.Name} to Dictionary.");
+                    foreach (var c in definition.Children)
+                    {
+                        if (c.TypeCode == (ushort)Code.BOOL)
+                            WriteTagBuffer(tag, c, dict[c.Name], ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
+                        else
+                            WriteTagBuffer(tag, c, dict[c.Name], offset + (int)c.Offset);
+                    }
+                }
+            }
+            else
+            {
+                PrimitiveValueWriter(tag, definition.TypeCode, value, offset);
+            }
+        }
+    }
+}

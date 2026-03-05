@@ -1,6 +1,4 @@
-﻿using Logix.Proto;
-using Logix.Tags;
-using Logix.Test;
+﻿using Logix.Driver;
 using System.Text.Json;
 
 var driver = new Driver("test", "192.168.68.64", "1,0");
@@ -10,22 +8,23 @@ var driver = new Driver("test", "192.168.68.64", "1,0");
 //var udtMap = JsonSerializer.Deserialize<Dictionary<ushort, UdtInfo>>(File.ReadAllText(@"Test\OfflineUdts.json"));
 
 //driver.TagReader = new TestLogixTagReader(tagMap, udtMap);
-//var tags = new List<string>() { "Program:FP01L.Main.I.Station[0]", "Program:MainProgram.prgTmr" };
-await driver.LoadTagsAsync();
+//var tags = new List<string>() { "Program:FP01L", "Program:FP02L" };
+//await driver.LoadTagsAsync(tags);
 
-//driver.LoadTags(new List<string>() { "structArray" });
+driver.LoadTags(new List<string>() { "writeAlias" });
 
 //var test = target.TagDefinitions;
 //File.WriteAllText("tags.json", JsonSerializer.Serialize((driver.TagReader as LogixTagReader).tagMap, new JsonSerializerOptions() { WriteIndented = true }));
 //File.WriteAllText("udts.json", JsonSerializer.Serialize((driver.TagReader as LogixTagReader).udtMap, new JsonSerializerOptions() { WriteIndented = true }));
 
-foreach (var def in driver.GetTagDefinitions().ToList())
+var res1 = await driver.ReadTagValueAsync("ctrlrWriteTest");
+Console.WriteLine(JsonSerializer.Serialize(res1));
+
+var res2 = await driver.ReadTagValueAsync("ctrlrReadTest");
+Console.WriteLine(JsonSerializer.Serialize(res2));
+
+foreach (var def in driver.GetTagDefinitionsFlat())
     Console.WriteLine($"Path: {def.Key}; Type: {def.Value.TypeName}; Length: {def.Value.Length}; Offset: {def.Value.Offset}; BitOffset: {def.Value.BitOffset}");
-
-await driver.WriteTagValueAsync("ctrlrWriteTest.arrTest[1]", 100);
-
-var res = await driver.ReadTagValueAsync("ctrlrWriteTest");
-Console.WriteLine(JsonSerializer.Serialize(res));
 
 var info = driver.ReadControllerInfo();
 Console.WriteLine(info);

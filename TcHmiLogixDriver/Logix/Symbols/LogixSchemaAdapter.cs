@@ -1,9 +1,11 @@
-﻿using Logix;
+﻿using Logix.Driver;
+using Logix;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
+using Logix.Tags;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
@@ -16,14 +18,16 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// </summary>
         /// <param name="driver"></param>
         /// <returns></returns>
-        public static JsonSchemaValue BuildSymbolSchema(LogixDriver driver)
+        public static JsonSchemaValue BuildSymbolSchema(IDriver driver)
         {
             var typeCache = new HashSet<string>();
 
             var definitions = new Value();
             var properties = new Value();
 
-            foreach (var tag in driver.Target.TagDefinitions.Values)
+            var tagDefinitions = driver.GetTagDefinitions();
+
+            foreach (var tag in tagDefinitions)
             {
                 if (tag.Name.StartsWith("__DEFVAL_"))
                     continue;
@@ -36,8 +40,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
             root.Add("definitions", definitions);
             root.Add("properties", properties);
             root.Add("type", "object");
+            root.Add("allowMapping", false);
 
-            var extractDefinitions = (driver.Target.TagDefinitions.Count > 0);
+            var extractDefinitions = (tagDefinitions.Count() > 0);
 
             return new JsonSchemaValue(root, extractDefinitions);
         }
@@ -49,17 +54,26 @@ namespace TcHmiLogixDriver.Logix.Symbols
             // recurse through nested/complex types (arrays and UDTs)
             (string typeName, Value schema) InnerResolver(TagDefinition node)
             {
-                if (LogixTypes.IsArray(node.Type.Code))
+                if (node.ExpansionLevel != ExpansionLevel.Deep)
                 {
-                    if (node.Type.Members is null || node.Type.Members.Count == 0)
+                    var unresolved = new Value();
+                    unresolved.Add("type", "object");
+                    unresolved.Add("allowMapping", false);
+                    unresolved.Add("hidden", true);
+                    return (node.Name, unresolved);
+                }
+
+                if (TagMetaHelpers.IsArray(node.TypeCode))
+                {
+                    if (node.Children is null || node.Children.Count == 0)
                         throw new Exception($"Array type {node.Name} has no members to infer item type.");
 
-                    var member = node.Type.Members.First();
+                    var member = node.Children.First();
 
                     // build inner item schema and type name
                     var (innerTypeName, innerSchema) = InnerResolver(member);
 
-                    var dims = node.Type.Dimensions ?? Array.Empty<uint>();
+                    var dims = node.Dimensions ?? Array.Empty<uint>();
                     var currentDim = dims.Length > 0 ? (int)dims[0] : 1;
                     var arrTypeName = $"ARRAY_0..{currentDim - 1}_OF-{innerTypeName}";
 
@@ -81,12 +95,12 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
                     return (arrTypeName, new Value { { "$ref", $"#/definitions/{fullDefName}" } });
                 }
-                else if (LogixTypes.IsUdt(node.Type.Code) || node.Name.StartsWith("Program:"))
+                else if (TagMetaHelpers.IsUdt(node.TypeCode) || node.Name.StartsWith("Program:"))
                 {
-                    if (node.Type.Name == "STRING")
+                    if (node.TypeName == "STRING")
                         return ("String", new Value { { "$ref", "tchmi:general#/definitions/String" } });
 
-                    var defName = $"{targetName}.{node.Type.Name}";
+                    var defName = $"{targetName}.{node.TypeName}";
 
                     if (!cache.Contains(defName))
                     {
@@ -98,9 +112,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
                         var udtMembers = new Value();
 
-                        if (node.Type.Members != null)
+                        if (node.Children != null)
                         {
-                            foreach (var member in node.Type.Members)
+                            foreach (var member in node.Children)
                             {
                                 var (_, memberSchema) = InnerResolver(member);
                                 udtMembers.Add(member.Name, memberSchema);
@@ -112,12 +126,12 @@ namespace TcHmiLogixDriver.Logix.Symbols
                         cache.Add(defName);
                     }
 
-                    return (node.Type.Name, new Value { { "$ref", $"#/definitions/{defName}" } });
+                    return (node.TypeName, new Value { { "$ref", $"#/definitions/{defName}" } });
                 }
                 else
                 {
                     // primitive type
-                    var primName = node.Type.Name;
+                    var primName = node.TypeName;
                     return (primName, new Value { { "$ref", $"tchmi:general#/definitions/{primName}" } });
                 }
             }

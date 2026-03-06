@@ -1,30 +1,16 @@
 using libplctag;
-using System.Collections;
-using System.Text.Json;
-using static Logix.LogixTypes;
+using static Logix.Tags.TagMetaHelpers;
 
 namespace Logix.Tags
 {
-    public interface ILogixValueResolver 
-    {
-        Type ValueType { get; }
-        object ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
-        void WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset = 0);
-    }
-    public interface ILogixValueResolver<T> : ILogixValueResolver
-    {
-        new T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
-        void WriteTagBuffer(Tag tag, TagDefinition definition, T value, int offset = 0);
-    }
-
-    public abstract class LogixValueResolverBase<T> : ILogixValueResolver<T>
+    public abstract class TagValueResolverBase<T> : ITagValueResolver<T>
     {
         public Type ValueType => typeof(T);
         public abstract T ResolveValue(Tag tag, TagDefinition definition, int offset = 0);
         public abstract void WriteTagBuffer(Tag tag, TagDefinition definition, T value, int offset = 0);
-        object ILogixValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
+        object ITagValueResolver.ResolveValue(Tag tag, TagDefinition definition, int offset)
             => ResolveValue(tag, definition, offset) ?? default!;
-        void ILogixValueResolver.WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset)
+        void ITagValueResolver.WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset)
             => WriteTagBuffer(tag, definition, (T)value);
 
 
@@ -33,7 +19,8 @@ namespace Logix.Tags
             return (Code)(typeCode) switch
             {
                 Code.BOOL => tag.GetBit(offset),
-                Code.SINT or Code.USINT => tag.GetInt8(offset),
+                Code.SINT => tag.GetInt8(offset),
+                Code.USINT => tag.GetUInt8(offset),
                 Code.INT or Code.UINT or Code.WORD => tag.GetInt16(offset),
                 Code.DINT or Code.UDINT or Code.DWORD => tag.GetInt32(offset),
                 Code.LINT or Code.ULINT or Code.LWORD => tag.GetInt64(offset),
@@ -91,84 +78,88 @@ namespace Logix.Tags
         }
     }
 
-    public class LogixDefaultValueResolver : LogixValueResolverBase<object>
+    public class DefaultTagValueResolver : TagValueResolverBase<object>
     {
         public override object ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
         {
-            if (LogixTypes.IsArray(definition.Type.Code))
+            if (IsArray(definition.TypeCode))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return 0;
 
                 var ret = new List<object>();
-                foreach (var m in definition.Type.Members)
+                foreach (var m in definition.Children)
                     ret.Add(ResolveValue(tag, m, offset + (int)m.Offset));
 
                 return ret;
             }
-            else if (LogixTypes.IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return 0;
 
                 var ret = new Dictionary<string, object>();
-                foreach (var m in definition.Type.Members)
+                foreach (var c in definition.Children)
                 {
-                    if (m.Type.Code == (ushort)Code.BOOL)
-                        ret[m.Name] = ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                    if (c.TypeCode == (ushort)Code.BOOL)
+                        ret[c.Name] = ResolveValue(tag, c, ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
                     else
-                        ret[m.Name] = ResolveValue(tag, m, offset + (int)m.Offset);
+                        ret[c.Name] = ResolveValue(tag, c, offset + (int)c.Offset);
                 }
 
                 return ret;
             }
             else
             {
-                return PrimitiveValueResolver(tag, definition.Type.Code, offset);
+                return PrimitiveValueResolver(tag, definition.TypeCode, offset);
             }
         }
 
         public override void WriteTagBuffer(Tag tag, TagDefinition definition, object value, int offset = 0)
         {
-            if (LogixTypes.IsArray(definition.Type.Code))
+            if (IsArray(definition.TypeCode))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
+                // cast object value to array
+                object[]? arr = null;
                 if (value.GetType() == typeof(IEnumerable<>))
+                    arr = (value as IEnumerable<object>)?.ToArray();
+                else if (value is Array genericArray)
+                    arr = genericArray.Cast<object>().ToArray();
+
+                if (arr is null) throw new Exception($"Unable to cast write value for array tag {tag.Name} to Enumerable.");
+
+                foreach (var c in definition.Children)
                 {
-                    var arr = (value as IEnumerable<object>)?.ToArray();
-                    if (arr is null) throw new Exception($"Unable to cast write value for array tag {tag.Name} to Enumerable.");
-                    foreach (var m in definition.Type.Members)
                     {
-                        {
-                            int.TryParse(m.Name, out var i);
-                            WriteTagBuffer(tag, m, arr[i], offset + (int)m.Offset);
-                        }
+                        int.TryParse(c.Name, out var i);
+                        WriteTagBuffer(tag, c, arr[i], offset + (int)c.Offset);
                     }
                 }
             }
-            else if (LogixTypes.IsUdt(definition.Type.Code) && !definition.Type.Name.Contains("STRING"))
+            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
             {
-                if (definition.Type.Members is null || definition.Type.Members.Count < 1)
+                if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
                 if (value.GetType() == typeof(IDictionary<string, object>))
                 {
                     var dict = value as IDictionary<string, object>;
                     if (dict is null) throw new Exception($"Unable to cast write value for tag {tag.Name} to Dictionary.");
-                    foreach (var m in definition.Type.Members)
+                    foreach (var c in definition.Children)
                     {
-                        if (m.Type.Code == (ushort)Code.BOOL)
-                            WriteTagBuffer(tag, m, dict[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                        if (c.TypeCode == (ushort)Code.BOOL)
+                            WriteTagBuffer(tag, c, dict[c.Name], ((offset + (int)c.Offset) * 8) + (int)c.BitOffset);
                         else
-                            WriteTagBuffer(tag, m, dict[m.Name], offset + (int)m.Offset);
+                            WriteTagBuffer(tag, c, dict[c.Name], offset + (int)c.Offset);
                     }
                 }
             }
             else
             {
-                PrimitiveValueWriter(tag, definition.Type.Code, value, offset);
+                PrimitiveValueWriter(tag, definition.TypeCode, value, offset);
             }
         }
     }

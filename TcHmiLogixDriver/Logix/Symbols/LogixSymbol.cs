@@ -1,6 +1,5 @@
-using Logix;
+using Logix.Driver;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,32 +11,35 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
-        private LogixDriver driver;
+        private IDriver driver;
         private LookupTrie<string> mappingTree;
-        private ConcurrentDictionary<uint, HashSet<string>> subscriptionSymbols = new();
 
-        public LogixSymbol(LogixDriver driver)
+        public LogixSymbol(IDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
         {
             this.driver = driver;
-            driver.ValueResolver = new LogixSymbolValueResolver();
         }
 
         /// <summary>
-        /// We receive a full requested symbol path, but we only want to read what is mapped in TcHmi.
-        /// So we keep track of what's mapped (in the mappingTree) and compare with what is requested.
-        /// Then we resolve the value based on the difference between what is read and what is requested.
+        /// Uses the requested symbol path to descend the mapping tree and determine which Tag to read.
+        /// If a child node is being requested but its parent is what's mapped, the whole parent is read.
+        /// This gives the mapper control over how data is read from the PLC.
         /// </summary>
         /// <param name="elements">Queue that represents requested symbol path</param>
         /// <param name="context"></param>
         /// <returns>Resolved TcHmi Value</returns>
         protected async override Task<Value> ReadAsync(Queue<string> elements, Context context)
         {
-            if (!driver.IsConnected)
-                throw new Exception($"No connection to target: {driver.Target.Name}");
-
             if (mappingTree is null)
+            {
                 throw new Exception($"No symbols mapped for target {driver.Target.Name}");
+            }
+
+            if (!driver.IsConnected)
+            {
+                return null;
+                throw new Exception($"Connection to target {driver.Target.Name} lost!");
+            }
 
             // get mapped element list with matching / partial matching path
             var match = mappingTree.TryDescend(elements).GetPath().ToList();

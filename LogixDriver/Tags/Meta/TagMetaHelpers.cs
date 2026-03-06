@@ -1,29 +1,11 @@
-﻿namespace Logix
+﻿namespace Logix.Tags
 {
-    public record TagDefinition(string Name, TypeDefinition Type, uint Offset = 0, uint BitOffset = 0);
-    public record TypeDefinition(ushort Code, uint Length, string Name = "", uint[]? Dimensions = null, List<TagDefinition>? Members = null)
-    {
-        public int ElementCount()
-        {
-            if (Dimensions is null || Dimensions.Length == 0) return 1;
-            long prod = 1;
-            foreach (var d in Dimensions)
-                prod = prod * Math.Max(1, (long)d);
-            return (int)Math.Max(1, prod);
-        }
-
-        public bool IsArray()
-        {
-            return LogixTypes.IsArray(Code);
-        }
-    }
-
-    public static class LogixTypes
+    public static class TagMetaHelpers
     {
         public enum Code : ushort
         {
-            BOOL = 0xC1, SINT = 0xC2, INT = 0xC3, DINT = 0xC4, 
-            LINT = 0xC5, USINT = 0xC6, UINT = 0xC7, UDINT = 0xC8, ULINT = 0xC9, 
+            BOOL = 0xC1, SINT = 0xC2, INT = 0xC3, DINT = 0xC4,
+            LINT = 0xC5, USINT = 0xC6, UINT = 0xC7, UDINT = 0xC8, ULINT = 0xC9,
             REAL = 0xCA, LREAL = 0xCB,
             STIME = 0xCC, DATE = 0xCD, TIME_OF_DAY = 0xCE, DATE_AND_TIME = 0xCF,
             STRING = 0xD0, BYTE = 0xD1, WORD = 0xD2, DWORD = 0xD3, LWORD = 0xD4,
@@ -39,6 +21,9 @@
         const ushort TYPE_IS_STRUCT = 0x8000;
         const ushort TYPE_IS_SYSTEM = 0x1000;
         const ushort TYPE_UDT_ID_MASK = 0x0FFF;
+
+        public static bool IsPrimitive(ushort typeCode) =>
+            (typeCode >= 0xC1 && typeCode <= 0xD4);
 
         public static bool IsUdt(ushort typeCode) =>
             ((typeCode & TYPE_IS_STRUCT) != 0) && !((typeCode & TYPE_IS_SYSTEM) != 0);
@@ -76,12 +61,10 @@
             return (Code)(typeCode) switch
             {
                 Code.BOOL => 1,
-                Code.SINT or Code.USINT => 1,
+                Code.SINT or Code.USINT or Code.BYTE => 1,
                 Code.INT or Code.UINT or Code.WORD => 2,
-                Code.DINT or Code.UDINT or Code.DWORD or Code.TIME => 4,
-                Code.LINT or Code.ULINT or Code.LWORD or Code.DATE_AND_TIME => 8,
-                Code.REAL => 4,
-                Code.LREAL => 8,
+                Code.DINT or Code.UDINT or Code.DWORD or Code.TIME or Code.REAL => 4,
+                Code.LINT or Code.ULINT or Code.LWORD or Code.DATE_AND_TIME or Code.LREAL => 8,
                 Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
                     => 88,
                 _ => 0

@@ -1,42 +1,37 @@
 ﻿using libplctag;
+using static Logix.Tags.TagMetaHelpers;
 using System.Text;
 
 namespace Logix.Tags
 {
-    public class TagInfo
+    public interface ITagMetaDecoder
     {
-        public uint Id { get; set; }
-        public ushort Type { get; set; }
-        public string Name { get; set; } = "";
-        public ushort Length { get; set; }
-        public uint[] Dimensions { get; set; } = new uint[0];
+        public TagDefinition DecodeTagMeta(Tag tag, int offset, out int elementSize);
+        public TypeDefinition DecodeUdtMeta(Tag tag);
+        public IEnumerable<TagDefinition> DecodeTagList(Tag tag);
+        public string DecodeControllerInfo(Tag tag);
     }
 
-    public class UdtFieldInfo
+    internal class TagMetaDecoder : ITagMetaDecoder
     {
-        public string Name { get; set; } = "";
-        public ushort Type { get; set; }
-        public ushort Metadata { get; set; }
-        public uint Offset { get; set; }
-    }
-
-    public class UdtInfo
-    {
-        public uint Size { get; set; }
-        public string Name { get; set; } = "";
-        public ushort Id { get; set; }
-        public ushort NumFields { get; set; }
-        public ushort Handle { get; set; }
-        public UdtFieldInfo[] Fields { get; set; } = new UdtFieldInfo[0];
-    }
-
-    public static class LogixTagDecoder
-    {
-        const int TAG_STRING_SIZE = 200;
-
-        public static TagInfo Decode(Tag tag, int offset, out int elementSize)
+        public IEnumerable<TagDefinition> DecodeTagList(Tag tag)
         {
+            var tagList = new List<TagDefinition>();
+            var tagSize = tag.GetSize();
 
+            int offset = 0;
+            while (offset < tagSize)
+            {
+                var tagDef = DecodeTagMeta(tag, offset, out int elementSize);
+                tagList.Add(tagDef);
+                offset += elementSize;
+            }
+
+            return tagList;
+        }
+
+        public TagDefinition DecodeTagMeta(Tag tag, int offset, out int elementSize)
+        {
             var tagInstanceId = tag.GetUInt32(offset);
             var tagType = tag.GetUInt16(offset + 4);
             var tagLength = tag.GetUInt16(offset + 6);
@@ -47,6 +42,7 @@ namespace Logix.Tags
                 tag.GetUInt32(offset + 16)
             };
 
+            const int TAG_STRING_SIZE = 200;
             var apparentTagNameLength = (int)tag.GetUInt16(offset + 20);
             var actualTagNameLength = Math.Min(apparentTagNameLength, TAG_STRING_SIZE * 2 - 1);
 
@@ -59,20 +55,11 @@ namespace Logix.Tags
 
             elementSize = 22 + actualTagNameLength;
 
-            return new TagInfo()
-            {
-                Id = tagInstanceId,
-                Type = tagType,
-                Name = tagName,
-                Length = tagLength,
-                Dimensions = tagArrayDims
-            };
-
+            return new TagDefinition(tagName, tagType, tagLength, (uint)offset, 0, ResolveTypeName(tagType), tagArrayDims);
         }
 
-        public static UdtInfo DecodeUdt(Tag tag)
+        public TypeDefinition DecodeUdtMeta(Tag tag)
         {
-
             var template_id = tag.GetUInt16(0);
             var member_desc_size = tag.GetUInt32(2);
             var udt_instance_size = tag.GetUInt32(6);
@@ -122,8 +109,46 @@ namespace Logix.Tags
                 offset += tag.GetStringTotalLength(offset);
             }
 
-            return udtInfo;
+            var members = udtInfo.Fields.Select(m =>
+            {
+                var bitOffset = (m.Type == (ushort)Code.BOOL) ? m.Metadata : 0;
+                var dimension = IsArray(m.Type) ? m.Metadata : 0;
+                return new TypeMemberDefinition(m.Type, m.Name, m.Offset, (ushort)dimension, (ushort)bitOffset);
+            })
+            .ToList();
 
+            return new TypeDefinition(udtInfo.Id, udtInfo.Size, udtInfo.Name, members);
         }
+
+        public string DecodeControllerInfo(Tag tag)
+        {
+            var buffer = tag.GetBuffer();
+
+            var offset = 10;
+            var major = buffer[offset].ToString();
+            offset += 1;
+            var minor = buffer[offset].ToString();
+            offset += 8;
+            var model = Encoding.ASCII.GetString(buffer, offset, buffer.Length - offset).TrimEnd('\0');
+
+            return $"{model} v{major}.{minor}";
+        }
+    }
+    internal class UdtFieldInfo
+    {
+        public string Name { get; set; } = "";
+        public ushort Type { get; set; }
+        public ushort Metadata { get; set; }
+        public uint Offset { get; set; }
+    }
+
+    internal class UdtInfo
+    {
+        public uint Size { get; set; }
+        public string Name { get; set; } = "";
+        public ushort Id { get; set; }
+        public ushort NumFields { get; set; }
+        public ushort Handle { get; set; }
+        public UdtFieldInfo[] Fields { get; set; } = new UdtFieldInfo[0];
     }
 }

@@ -1,10 +1,9 @@
-﻿using Logix;
-using Newtonsoft.Json;
+﻿using Logix.Driver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Timers;
 using TcHmiLogixDriver.Logix;
 using TcHmiLogixDriver.Logix.Symbols;
 using TcHmiSrv.Core;
@@ -28,9 +27,10 @@ namespace TcHmiLogixDriver
         private LogixDriverDiagnostics diagnostics;
 
         private DynamicSymbolsProvider symbolProvider;
-        private Dictionary<string, LogixDriver> drivers;
+        private Dictionary<string, IDriver> drivers;
 
-        private Timer connectionStateTimer;
+        private Task? connectionStateTask;
+        private CancellationTokenSource? connectionStateCts;
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -39,56 +39,64 @@ namespace TcHmiLogixDriver
 
             // server event handling
             requestListener.OnRequestAsync += onRequestAsync;
-            configListener.OnChange += onConfigChange;
+            configListener.OnChangeAsync += onConfigChangeAsync;
             shutdownListener.OnShutdown += onShutDown;
 
-            // target connection state management
-            connectionStateTimer = new Timer(5000);
-            connectionStateTimer.AutoReset = false;
-            connectionStateTimer.Elapsed += onConnectionStateTimerElapsed;
-            connectionStateTimer.Start();
+            connectionStateCts = new CancellationTokenSource();
+            connectionStateTask = Task.Run(() => ConnectionStateAsync(connectionStateCts.Token), connectionStateCts.Token);
 
             symbolProvider = new DynamicSymbolsProvider();
 
             return ErrorValue.HMI_SUCCESS;
         }
 
-        // target connection state management
-        private void onConnectionStateTimerElapsed(object sender, ElapsedEventArgs e)
+        private async Task ConnectionStateAsync(CancellationToken cancel, uint interval = 5000)
         {
-            try
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(interval));
+            while (await timer.WaitForNextTickAsync(cancel))
             {
-                var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
+                try
+                {
+                    var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
 
-                foreach (var driver in disconnectedDrivers)
-                    TryConnectDriver(driver);
+                    foreach (var driver in disconnectedDrivers)
+                    {
+                        if (driver.TryConnect())
+                        {
+                            diagnostics.Targets[driver.Target.Name] = 
+                                new TargetDiagnostics(connectionState: "CONNECTED", controllerInfo: driver.ControllerInfo);
+                        }
+                        else
+                        {
+                            diagnostics.Targets[driver.Target.Name] = 
+                                new TargetDiagnostics(connectionState: "DISCONNECTED", controllerInfo: "");
+                        }
+                    }
 
-                UpdateMappedSymbolList();
+                    await UpdateMappedSymbolListAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.IO.File.AppendAllText("configLoad.log", $"\n{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
+                    Console.WriteLine("Error on reconnect: " + ex.ToString());
+                }
             }
-            catch (Exception ex) 
-            {
-                System.IO.File.AppendAllText("configLoad.log", $"\n{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
-                Console.WriteLine("Error on reconnect: " + ex.ToString());
-            }
-            
-            connectionStateTimer.Start();
         }
 
         // request mapped symbol list from TcHmiSrv
-        private void UpdateMappedSymbolList()
+        private async Task UpdateMappedSymbolListAsync()
         {
             if (symbolProvider is null || symbolProvider.Values.Count < 1)
                 return;
 
-            var context = TcHmiApplication.Context;
-            var command = new Command("ListSymbols");
-            var result = TcHmiApplication.AsyncHost.Execute(ref context, ref command);
+            var (result, ctx, cmd) = 
+                await TcHmiApplication.AsyncHost.ExecuteAsync(TcHmiApplication.Context, new Command("ListSymbols"));
 
             if (result != ErrorValue.HMI_SUCCESS)
                 return;
 
-            var domainSymbolNames = command.ReadValue.Keys
-                .Where(s => s.StartsWith(context.Domain));
+            var domainSymbolNames = cmd.ReadValue.Keys
+                .Where(s => s.StartsWith(ctx.Domain));
 
             foreach (var symbol in symbolProvider)
             {
@@ -98,12 +106,12 @@ namespace TcHmiLogixDriver
         }
 
         // update configuration
-        private void onConfigChange(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
+        private async Task onConfigChangeAsync(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
 
-            drivers = new Dictionary<string, LogixDriver>();
+            drivers = new Dictionary<string, IDriver>();
             symbolProvider = new DynamicSymbolsProvider();
             diagnostics = new LogixDriverDiagnostics();
 
@@ -116,14 +124,16 @@ namespace TcHmiLogixDriver
                     var targetName = targetConfig.Key;
                     var config = targetConfig.Value;
 
-                    var target = new LogixTarget(targetName, config.targetAddress, config.targetSlot);
-                    var driver = new LogixDriver(target);
+                    var driver = Driver.Create(
+                        new Target(targetName, config.targetAddress, config.targetSlot), 
+                        new LogixSymbolValueResolver());
+
                     var diag = new TargetDiagnostics();
 
                     diagnostics.Targets.Add(targetName, diag);
                     drivers.Add(targetName, driver);
 
-                    TryConnectDriver(driver);
+                    await InitializeDriverAsync(driver);
                 }
             }
             catch (Exception ex)
@@ -150,88 +160,76 @@ namespace TcHmiLogixDriver
             };
         }
 
-        private void TryConnectDriver(LogixDriver driver)
+        private async Task InitializeDriverAsync(IDriver driver)
         {
-            var info = driver.ReadControllerInfo();
-            var config = configuration.Targets[driver.Target.Name];
-
-            if (!string.IsNullOrEmpty(info))
+            if (driver.TryConnect())
             {
+                var info = driver.ControllerInfo;
+                var config = configuration.Targets[driver.Target.Name];
+
                 // update diagnostics
                 diagnostics.Targets[driver.Target.Name] =
                     new TargetDiagnostics(connectionState: "CONNECTED", controllerInfo: info);
 
-                // browse tags
-                if (config.tagBrowser)
-                {
-                    var tags = driver.LoadTags(config.tagProgramFilter);
+                // load tags for symbol browser
+                await driver.LoadTagsAsync(config.tagSelector);
 
-                    // cache tags
-                    // may want to encode or compress this - large entries here may be causing server crash
-                    // on project load - need to diagnose logs and dump files
-                    var cacheConfigPath = $"Targets::{driver.Target.Name}::tagDefinitionCache";
-                    var json = JsonConvert.SerializeObject(tags);
-                    TcHmiApplication.AsyncHost.ReplaceConfigValue(TcHmiApplication.Context, cacheConfigPath, json);
+                // re / create symbol
+                if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
+                {
+                    (oldSymbol as LogixSymbol).Dispose();
+                    symbolProvider.Remove(driver.Target.Name);
                 }
+
+                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver));
             }
             else
             {
                 // update diagnostics
                 diagnostics.Targets[driver.Target.Name] =
                     new TargetDiagnostics(connectionState: "DISCONNECTED", "");
-
-                // read tag defintion cache
-                if (!config.tagBrowser && !string.IsNullOrEmpty(config.tagDefinitionCache))
-                {
-                    var tags = JsonConvert.DeserializeObject<IEnumerable<TagDefinition>>(config.tagDefinitionCache);
-                    driver.Target.AddTagDefinition(tags);
-                }
             }
-
-            // re / create symbol
-            if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
-            {
-                (oldSymbol as LogixSymbol).Dispose();
-                symbolProvider.Remove(driver.Target.Name);
-            }
-
-            symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver));
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
         private async Task onRequestAsync(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
+            var ret = ErrorValue.HMI_SUCCESS;
+            var context = e.Context;
             var commands = e.Commands;
 
             try
             {
-                e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-
-                foreach (var command in await symbolProvider.HandleCommandsAsync(e.Commands, e.Context))
+                foreach (var command in await symbolProvider.HandleCommandsAsync(commands, context))
                 {
-                    // Use the mapping to check which command is requested
-                    switch (command.Mapping)
-                    {
-                        case "Diagnostics":
-                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                            command.ReadValue = diagnostics.ToValue();
-                            break;
+                    var mapping = command.Mapping;
 
-                        default:
-                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                            command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
-                            break;
+                    try
+                    {
+                        switch (command.Mapping)
+                        {
+                            case "Diagnostics":
+                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+                                command.ReadValue = diagnostics.ToValue();
+                                break;
+
+                            default:
+                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
+                                command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        command.ExtensionResult = Convert.ToUInt32(TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail);
+                        command.ResultString =
+                            await TcHmiAsyncLogger.LocalizeAsync(context, "ERROR_CALL_COMMAND", mapping, ex.ToString());
                     }
                 }
             }
             catch (Exception ex)
             {
-                var command = e.Commands.FirstOrDefault();
-                if (command != null)
-                {
-                    command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                    command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
-                }
+                throw new TcHmiException(ex.ToString(), ret == ErrorValue.HMI_SUCCESS ? ErrorValue.HMI_E_EXTENSION : ret);
             }
         }
 
@@ -239,12 +237,10 @@ namespace TcHmiLogixDriver
         private void onShutDown(object sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
             requestListener.OnRequestAsync -= onRequestAsync;
-            configListener.OnChange -= onConfigChange;
+            configListener.OnChangeAsync -= onConfigChangeAsync;
             shutdownListener.OnShutdown -= onShutDown;
 
-            connectionStateTimer.Stop();
-            connectionStateTimer.Elapsed -= onConnectionStateTimerElapsed;
-            connectionStateTimer.Dispose();
+            connectionStateCts.Cancel();
 
             foreach (var driver in drivers.Values)
                 driver.Dispose();

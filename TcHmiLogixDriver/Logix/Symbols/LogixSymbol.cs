@@ -21,9 +21,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
         }
 
         /// <summary>
-        /// We receive a full requested symbol path, but we only want to read what is mapped in TcHmi.
-        /// So we keep track of what's mapped (in the mappingTree) and compare with what is requested.
-        /// Then we resolve the value based on the difference between what is read and what is requested.
+        /// Uses the requested symbol path to descend the mapping tree and determine which Tag to read.
+        /// If a child node is being requested but its parent is what's mapped, the whole parent is read.
+        /// This gives the mapper control over how data is read from the PLC.
         /// </summary>
         /// <param name="elements">Queue that represents requested symbol path</param>
         /// <param name="context"></param>
@@ -32,7 +32,6 @@ namespace TcHmiLogixDriver.Logix.Symbols
         {
             if (mappingTree is null)
             {
-                return null;
                 throw new Exception($"No symbols mapped for target {driver.Target.Name}");
             }
 

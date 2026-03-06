@@ -146,14 +146,23 @@ namespace Logix.Driver
         {
             if (!isConnected || channel is null)
                 return;
+            try
+            {
+                var (definition, tag) = GetTag(tagName);
 
-            var (definition, tag) = GetTag(tagName);
+                if (!tag.IsInitialized)
+                    tag = await channel.Writer.InitializeAsync(tag);
 
-            if (!tag.IsInitialized)
-                tag = await channel.Writer.InitializeAsync(tag);
+                valueResolver.WriteTagBuffer(tag, definition, value);
+                tag = await channel.Writer.WriteTagAsync(tag);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message == EX_ERR_TIMEOUT)
+                    SetConnectionState(false);
 
-            valueResolver.WriteTagBuffer(tag, definition, value);
-            tag = await channel.Writer.WriteTagAsync(tag);
+                else throw new Exception(ex.Message);
+            }
         }
 
         /// <summary>
@@ -165,7 +174,7 @@ namespace Logix.Driver
             var rawPayload = new byte[] {
                 0x01, 0x02, 0x20, 0x01, 0x24, 0x01 };
 
-            var tag = CreateTag("@raw");
+            var tag = tagFactory.Create("@raw");
 
             tag.Initialize();
             tag.SetSize(rawPayload.Length);
@@ -188,11 +197,11 @@ namespace Logix.Driver
                 if (definition.IsArray)
                 {
                     var readPath = ResolveArrayPath(tagPath, definition);
-                    tag = CreateTag(readPath, definition.ElementCount());
+                    tag = tagFactory.Create(readPath, definition.ElementCount());
                 }
                 else
                 {
-                    tag = CreateTag(tagPath, 1);
+                    tag = tagFactory.Create(tagPath, 1);
                 }
                 tagCache.AddTag(tagPath, tag);
             }
@@ -201,22 +210,6 @@ namespace Logix.Driver
                 throw new Exception($"Unable to create libplctag {tagPath}.");
 
             return (definition, tag);
-        }
-
-        private Tag CreateTag(string tagPath, int elementCount = 1)
-        {
-            var tag = new Tag
-            {
-                Gateway = Target.Gateway,
-                Path = Target.Path,
-                PlcType = Target.PlcType,
-                Protocol = Protocol.ab_eip,
-                Name = tagPath,
-                ElementCount = elementCount,
-                Timeout = TimeSpan.FromMilliseconds(Target.TimeoutMs)
-            };
-
-            return tag;
         }
 
         private string ResolveArrayPath(string tagName, TagDefinition definition)

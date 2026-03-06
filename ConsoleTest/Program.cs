@@ -17,7 +17,7 @@ driver.LoadTags();
 foreach (var def in driver.GetTagDefinitionsFlat().Where(t => t.Key.StartsWith("Program:FP01L")))
     Console.WriteLine($"Path: {def.Key}; Type: {def.Value.TypeName}; Length: {def.Value.Length}; Offset: {def.Value.Offset}; BitOffset: {def.Value.BitOffset}");
 
-var res1 = await driver.ReadTagValueAsync("Program:FP01L.Main.I.Station[0]");
+var res1 = await driver.ReadTagValueAsync("arr3D[0]");
 Console.WriteLine(JsonSerializer.Serialize(res1));
 
 var info = driver.ControllerInfo;

@@ -194,36 +194,42 @@ namespace TcHmiLogixDriver
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
         private async Task onRequestAsync(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
+            var ret = ErrorValue.HMI_SUCCESS;
+            var context = e.Context;
             var commands = e.Commands;
 
             try
             {
-                e.Commands.Result = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-
-                foreach (var command in await symbolProvider.HandleCommandsAsync(e.Commands, e.Context))
+                foreach (var command in await symbolProvider.HandleCommandsAsync(commands, context))
                 {
-                    switch (command.Mapping)
-                    {
-                        case "Diagnostics":
-                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                            command.ReadValue = diagnostics.ToValue();
-                            break;
+                    var mapping = command.Mapping;
 
-                        default:
-                            command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                            command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
-                            break;
+                    try
+                    {
+                        switch (command.Mapping)
+                        {
+                            case "Diagnostics":
+                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
+                                command.ReadValue = diagnostics.ToValue();
+                                break;
+
+                            default:
+                                command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
+                                command.ResultString = "Unknown command '" + command.Mapping + "' not handled.";
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        command.ExtensionResult = Convert.ToUInt32(TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail);
+                        command.ResultString =
+                            await TcHmiAsyncLogger.LocalizeAsync(context, "ERROR_CALL_COMMAND", mapping, ex.ToString());
                     }
                 }
             }
             catch (Exception ex)
             {
-                var command = e.Commands.FirstOrDefault();
-                if (command != null)
-                {
-                    command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail;
-                    command.ResultString = "Calling command '" + command.Mapping + "' failed! Additional information: " + ex.ToString();
-                }
+                throw new TcHmiException(ex.ToString(), ret == ErrorValue.HMI_SUCCESS ? ErrorValue.HMI_E_EXTENSION : ret);
             }
         }
 

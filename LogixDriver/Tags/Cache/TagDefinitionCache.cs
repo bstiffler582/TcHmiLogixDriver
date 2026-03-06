@@ -1,6 +1,16 @@
 ﻿namespace Logix.Tags
 {
-    public class TagDefinitionCache : ITagDefinitionCache
+    public interface ITagDefinitionCache
+    {
+        public void AddTagDefinition(TagDefinition tagDefinition);
+        public bool TryGetTagDefinition(string tagPath, out TagDefinition? tagDefinition);
+        public IEnumerable<TagDefinition> GetTagDefinitions();
+        public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitionsFlat();
+        public void AddTypeDefinition(ushort code, TypeDefinition typeDefinition);
+        public bool TryGetTypeDefinition(ushort code, out TypeDefinition? typeDefinition);
+    }
+
+    internal class TagDefinitionCache : ITagDefinitionCache
     {
         private readonly Dictionary<string, TagDefinition> tagDefinitions = new();
         private readonly Dictionary<string, TagDefinition> tagDefinitionsFlat = new();

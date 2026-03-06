@@ -2,7 +2,13 @@
 
 namespace Logix.Tags
 {
-    public class TagCache : ITagCache
+    public interface ITagCache
+    {
+        public void AddTag(string tagPath, Tag tag);
+        public bool TryGetTag(string tagPath, out Tag? tag);
+    }
+
+    internal class TagCache : ITagCache
     {
         private readonly Dictionary<string, Tag> tagCache = new();
 

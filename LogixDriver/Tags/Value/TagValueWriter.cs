@@ -2,7 +2,15 @@
 
 namespace Logix.Tags
 {
-    public class TagValueWriter : ITagValueWriter
+    public interface ITagValueWriter
+    {
+        public Task<Tag> WriteTagAsync(Tag tag);
+        public Tag WriteTag(Tag tag);
+        public Task<Tag> InitializeAsync(Tag tag);
+        public Tag Initialize(Tag tag);
+    }
+
+    internal class TagValueWriter : ITagValueWriter
     {
         public Tag Initialize(Tag tag)
         {

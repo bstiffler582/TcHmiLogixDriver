@@ -1,15 +1,22 @@
-﻿using Logix.Driver;
-using libplctag;
+﻿using libplctag;
 
 namespace Logix.Tags
 {
-    public class TagValueReader : ITagValueReader
+    public interface ITagValueReader
     {
-        private readonly Target? target;
+        public Task<Tag> ReadTagAsync(Tag tag);
+        public Tag ReadTag(Tag tag);
+        public Task<Tag> ReadTagAsync(string tagName, int elementCount = 1);
+        public Tag ReadTag(string tagName, int elementCount = 1);
+    }
 
-        public TagValueReader(Target? target) 
+    internal class TagValueReader : ITagValueReader
+    {
+        private readonly ITagFactory tagFactory;
+
+        public TagValueReader(ITagFactory tagFactory) 
         { 
-            this.target = target;
+            this.tagFactory = tagFactory;
         }
 
         public async Task<Tag> ReadTagAsync(Tag tag)
@@ -25,7 +32,7 @@ namespace Logix.Tags
 
         public async Task<Tag> ReadTagAsync(string tagName, int elementCount = 1)
         {
-            var tag = CreateTag(tagName, elementCount);
+            var tag = tagFactory.Create(tagName, elementCount);
             await tag.ReadAsync();
             return tag;
         }
@@ -33,23 +40,6 @@ namespace Logix.Tags
         public Tag ReadTag(string tagName, int elementCount = 1)
         {
             return ReadTagAsync(tagName, elementCount).GetAwaiter().GetResult();
-        }
-
-        private Tag CreateTag(string tagName, int elementCount = 1)
-        {
-            if (target is null)
-                throw new ArgumentNullException(nameof(target));
-
-            return new Tag
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = Protocol.ab_eip,
-                Name = tagName,
-                ElementCount = elementCount,
-                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
-            };
         }
     }
 }

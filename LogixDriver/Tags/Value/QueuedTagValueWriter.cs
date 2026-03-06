@@ -2,7 +2,7 @@
 
 namespace Logix.Tags
 {
-    public class QueuedTagValueWriter : ITagValueWriter
+    internal class QueuedTagValueWriter : ITagValueWriter
     {
         private readonly ITagReadWriteQueue queue;
 

@@ -4,26 +4,17 @@ using System.Text;
 
 namespace Logix.Tags
 {
-    public class TagMetaDecoder : ITagMetaDecoder
+    public interface ITagMetaDecoder
     {
-        public IEnumerable<TagDefinition> DecodeControllerTags(Tag tag)
-        {
-            var tagList = new List<TagDefinition>();
+        public TagDefinition DecodeTagMeta(Tag tag, int offset, out int elementSize);
+        public TypeDefinition DecodeUdtMeta(Tag tag);
+        public IEnumerable<TagDefinition> DecodeTagList(Tag tag);
+        public string DecodeControllerInfo(Tag tag);
+    }
 
-            var tagSize = tag.GetSize();
-
-            int offset = 0;
-            while (offset < tagSize)
-            {
-                var tagDef = DecodeTagMeta(tag, offset, out int elementSize);
-                tagList.Add(tagDef);
-                offset += elementSize;
-            }
-
-            return tagList;
-        }
-
-        public IEnumerable<TagDefinition> DecodeProgramTags(Tag tag)
+    internal class TagMetaDecoder : ITagMetaDecoder
+    {
+        public IEnumerable<TagDefinition> DecodeTagList(Tag tag)
         {
             var tagList = new List<TagDefinition>();
             var tagSize = tag.GetSize();

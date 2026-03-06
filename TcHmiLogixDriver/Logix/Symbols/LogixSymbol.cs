@@ -1,6 +1,5 @@
 using Logix.Driver;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,7 +13,6 @@ namespace TcHmiLogixDriver.Logix.Symbols
     {
         private IDriver driver;
         private LookupTrie<string> mappingTree;
-        private ConcurrentDictionary<uint, HashSet<string>> subscriptionSymbols = new();
 
         public LogixSymbol(IDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
@@ -32,11 +30,17 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// <returns>Resolved TcHmi Value</returns>
         protected async override Task<Value> ReadAsync(Queue<string> elements, Context context)
         {
-            if (!driver.IsConnected)
-                throw new Exception($"No connection to target: {driver.Target.Name}");
-
             if (mappingTree is null)
+            {
+                return null;
                 throw new Exception($"No symbols mapped for target {driver.Target.Name}");
+            }
+
+            if (!driver.IsConnected)
+            {
+                return null;
+                throw new Exception($"Connection to target {driver.Target.Name} lost!");
+            }
 
             // get mapped element list with matching / partial matching path
             var match = mappingTree.TryDescend(elements).GetPath().ToList();

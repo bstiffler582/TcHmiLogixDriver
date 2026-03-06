@@ -5,12 +5,12 @@ namespace Logix.Tags
 {
     internal class QueuedTagValueReader : ITagValueReader
     {
-        private readonly Target? target;
+        private readonly ITagFactory tagFactory;
         private readonly ITagReadWriteQueue queue;
 
-        public QueuedTagValueReader(Target? target, ITagReadWriteQueue queue)
+        public QueuedTagValueReader(ITagFactory tagFactory, ITagReadWriteQueue queue)
         {
-            this.target = target;
+            this.tagFactory = tagFactory;
             this.queue = queue;
         }
 
@@ -26,31 +26,14 @@ namespace Logix.Tags
 
         public async Task<Tag> ReadTagAsync(string tagName, int elementCount = 1)
         {
-            var tag = CreateTag(tagName, elementCount);
+            var tag = tagFactory.Create(tagName, elementCount);
             return await queue.EnqueueReadAsync(tag);
         }
 
         public Tag ReadTag(string tagName, int elementCount = 1)
         {
-            var tag = CreateTag(tagName, elementCount);
+            var tag = tagFactory.Create(tagName, elementCount);
             return queue.EnqueueReadSync(tag);
-        }
-
-        private Tag CreateTag(string tagName, int elementCount = 1)
-        {
-            if (target is null)
-                throw new ArgumentNullException(nameof(target));
-
-            return new Tag
-            {
-                Gateway = target.Gateway,
-                Path = target.Path,
-                PlcType = target.PlcType,
-                Protocol = Protocol.ab_eip,
-                Name = tagName,
-                ElementCount = elementCount,
-                Timeout = TimeSpan.FromMilliseconds(target.TimeoutMs)
-            };
         }
     }
 }

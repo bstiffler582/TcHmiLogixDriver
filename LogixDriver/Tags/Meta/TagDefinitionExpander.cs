@@ -2,21 +2,27 @@
 
 namespace Logix.Tags
 {
+    internal interface ITagDefinitionExpander
+    {
+        TagDefinition ExpandTagDefinition(TagDefinition root, bool deep = true);
+        Task<TagDefinition> ExpandTagDefinitionAsync(TagDefinition root, bool deep = true);
+    }
+
     /// <summary>
     /// Progressively builds a controller's tag tree based on what tags are requested.
     /// Defines TagDefinition parent->child relationships based on program/array/udt definitions.
     /// </summary>
-    public class TagDefinitionExpander : ITagDefinitionExpander
+    internal class TagDefinitionExpander : ITagDefinitionExpander
     {
         private readonly ITagValueReader reader;
-        private readonly ITagMetaDecoder decoder;
+        private readonly ITagMetaDecoder metaDecoder;
         private readonly ITagDefinitionCache tagCache;
 
-        public TagDefinitionExpander(ITagValueReader reader, ITagDefinitionCache cache)
+        public TagDefinitionExpander(ITagValueReader reader, ITagDefinitionCache cache, ITagMetaDecoder? metaDecoder = null)
         {
             this.reader = reader;
             this.tagCache = cache;
-            this.decoder = new TagMetaDecoder();
+            this.metaDecoder = metaDecoder ?? new TagMetaDecoder();
         }
 
         public TagDefinition ExpandTagDefinition(TagDefinition root, bool deep = true)
@@ -65,7 +71,7 @@ namespace Logix.Tags
             if (tagDef.ExpansionLevel == ExpansionLevel.None)
             {
                 var programMetaTag = await reader.ReadTagAsync($"{tagDef.Name}.@tags");
-                var progTagInfos = decoder.DecodeProgramTags(programMetaTag!);
+                var progTagInfos = metaDecoder.DecodeTagList(programMetaTag!);
 
                 var programTags = progTagInfos
                     .Where(t => !IsSystem(t.TypeCode))
@@ -135,9 +141,11 @@ namespace Logix.Tags
                 TypeDefinition typeDef;
                 if (tagCache.TryGetTypeDefinition(udtId, out var cached) && cached is not null)
                     typeDef = cached;
-
-                var typeMetaTag = await reader.ReadTagAsync($"@udt/{udtId}");
-                typeDef = decoder.DecodeUdtMeta(typeMetaTag!);
+                else
+                {
+                    var typeMetaTag = await reader.ReadTagAsync($"@udt/{udtId}");
+                    typeDef = metaDecoder.DecodeUdtMeta(typeMetaTag!);
+                }
 
                 var tagMembers = typeDef.Members?
                     .Select(TagDefinition.FromTypeMemberDefinition)

@@ -124,11 +124,9 @@ namespace TcHmiLogixDriver
                     var targetName = targetConfig.Key;
                     var config = targetConfig.Value;
 
-                    var driver = new Driver(
-                        targetName, 
-                        config.targetAddress, 
-                        config.targetSlot, 
-                        valueResolver: new LogixSymbolValueResolver());
+                    var driver = Driver.Create(
+                        new Target(targetName, config.targetAddress, config.targetSlot), 
+                        new LogixSymbolValueResolver());
 
                     var diag = new TargetDiagnostics();
 
@@ -204,7 +202,6 @@ namespace TcHmiLogixDriver
 
                 foreach (var command in await symbolProvider.HandleCommandsAsync(e.Commands, e.Context))
                 {
-                    // Use the mapping to check which command is requested
                     switch (command.Mapping)
                     {
                         case "Diagnostics":

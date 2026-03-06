@@ -3,35 +3,53 @@ using Logix.Tags;
 
 namespace Logix.Driver
 {
-    public class Driver : IDriver, IConnectionState
+    public class Driver : IDriver
     {
         public Target Target { get; }
         public bool IsConnected => isConnected;
         public string ControllerInfo => controllerInfo;
 
+        private ITagValueChannel? channel;
+
+        private readonly ITagCache tagCache;
         private readonly ITagMetaProvider metaProvider;
         private readonly ITagValueResolver valueResolver;
-        private readonly ITagDefinitionCache tagDefinitionCache = new TagDefinitionCache();
-        private readonly ITagCache tagCache = new TagCache();
-        private readonly ITagMetaDecoder metaDecoder = new TagMetaDecoder();
-
-        private ITagReadWriteQueue? readWriteQueue;
-        private ITagValueReader? valueReader;
-        private ITagValueWriter? valueWriter;
+        private readonly ITagValueChannelFactory channelFactory;
+        private readonly ITagFactory tagFactory;
 
         private volatile bool isConnected = false;
         private string controllerInfo = string.Empty;
 
         private const string EX_ERR_TIMEOUT = "ErrorTimeout";
-        private const int QUEUE_INTERVAL_MS = 50;
+        private const uint QUEUE_INTERVAL_MS = 50;
 
-        public Driver(string name, string gateway, string path, PlcType plcType = PlcType.ControlLogix, ITagValueResolver? valueResolver = null)
+        public Driver(
+            Target target,
+            ITagValueResolver valueResolver,
+            ITagCache tagCache,
+            ITagMetaProvider metaProvider,
+            ITagValueChannelFactory channelFactory,
+            ITagFactory tagFactory)
         {
-            Target = new Target(name, gateway, path, plcType);
-            this.valueResolver = valueResolver ?? new DefaultTagValueResolver();
+            Target = target;
+            this.valueResolver = valueResolver;
+            this.tagCache = tagCache;
+            this.metaProvider = metaProvider;
+            this.channelFactory = channelFactory;
+            this.tagFactory = tagFactory;
+        }
 
-            // bypass queue for reading tag metadata
-            metaProvider = new TagMetaProvider(new TagValueReader(Target), tagDefinitionCache);
+        public static Driver Create(Target target, ITagValueResolver? valueResolver = null)
+        {
+            var tagFactory = new TagFactory(target);
+            return new Driver(
+                target,
+                valueResolver ?? new DefaultTagValueResolver(),
+                new TagCache(),
+                new TagMetaProvider(tagFactory),
+                new TagValueChannelFactory(),
+                tagFactory
+            );
         }
 
         public bool TryConnect()
@@ -53,23 +71,14 @@ namespace Logix.Driver
 
         private void SetConnectionState(bool connected)
         {
-            if (connected)
-            {
-                readWriteQueue?.Dispose();
-                readWriteQueue = new TagReadWriteQueue(QUEUE_INTERVAL_MS);
-
-                valueReader = new QueuedTagValueReader(Target, readWriteQueue!);
-                valueWriter = new QueuedTagValueWriter(readWriteQueue!);
-            }
-            
+            channel?.Dispose();
+            channel = connected ? channelFactory?.Open(tagFactory, QUEUE_INTERVAL_MS) : null;
             isConnected = connected;
         }
 
         public async Task LoadTagsAsync(IEnumerable<string>? tagFilter = null)
         {
-            var tags = await metaProvider.LoadTagDefinitionsAsync(tagFilter);
-            foreach (var tag in tags)
-                tagDefinitionCache.AddTagDefinition(tag);
+            await metaProvider.LoadTagDefinitionsAsync(tagFilter);
         }
 
         public void LoadTags(IEnumerable<string>? tagFilter = null)
@@ -79,30 +88,33 @@ namespace Logix.Driver
 
         public IReadOnlyDictionary<string, TagDefinition> GetTagDefinitionsFlat()
         {
-            return tagDefinitionCache.GetTagDefinitionsFlat();
+            return metaProvider.GetTagDefinitionsFlat();
         }
 
         public IEnumerable<TagDefinition> GetTagDefinitions()
         {
-            return tagDefinitionCache.GetTagDefinitions();
+            return metaProvider.GetTagDefinitions();
         }
 
         public object? ReadTagValue(string tagName)
         {
+            if (!isConnected || channel is null)
+                return null;
+
             var (definition, tag) = GetTag(tagName);
-            tag = valueReader!.ReadTag(tag);
+            tag = channel.Reader.ReadTag(tag);
             return valueResolver.ResolveValue(tag, definition);
         }
 
         public async Task<object?> ReadTagValueAsync(string tagName)
         {
+            if (!isConnected || channel is null)
+                return null;
+
             try
             {
-                if (!isConnected)
-                    return null;
-                
                 var (definition, tag) = GetTag(tagName);
-                tag = await valueReader!.ReadTagAsync(tag);
+                tag = await channel.Reader.ReadTagAsync(tag);
                 return valueResolver.ResolveValue(tag, definition);
             }
             catch (Exception ex)
@@ -118,24 +130,30 @@ namespace Logix.Driver
 
         public void WriteTagValue(string tagName, object value)
         {
+            if (!isConnected || channel is null)
+                return;
+
             var (definition, tag) = GetTag(tagName);
 
             if (!tag.IsInitialized)
-                tag = valueWriter!.Initialize(tag);
+                tag = channel.Writer.Initialize(tag);
 
             valueResolver.WriteTagBuffer(tag, definition, value);
-            tag = valueWriter!.WriteTag(tag);
+            tag = channel.Writer.WriteTag(tag);
         }
 
         public async Task WriteTagValueAsync(string tagName, object value)
         {
+            if (!isConnected || channel is null)
+                return;
+
             var (definition, tag) = GetTag(tagName);
 
             if (!tag.IsInitialized)
-                tag = await valueWriter!.InitializeAsync(tag);
+                tag = await channel.Writer.InitializeAsync(tag);
 
             valueResolver.WriteTagBuffer(tag, definition, value);
-            tag = await valueWriter!.WriteTagAsync(tag);
+            tag = await channel.Writer.WriteTagAsync(tag);
         }
 
         /// <summary>
@@ -154,12 +172,12 @@ namespace Logix.Driver
             tag.SetBuffer(rawPayload);
             tag.Write();
 
-            return metaDecoder!.DecodeControllerInfo(tag) ?? string.Empty;
+            return new TagMetaDecoder().DecodeControllerInfo(tag) ?? string.Empty;
         }
 
         private (TagDefinition, Tag) GetTag(string tagPath)
         {
-            if (!tagDefinitionCache.TryGetTagDefinition(tagPath, out var definition) || definition!.ExpansionLevel != ExpansionLevel.Deep)
+            if (!metaProvider.TryGetTagDefinition(tagPath, out var definition) || definition!.ExpansionLevel != ExpansionLevel.Deep)
                 definition = metaProvider.LoadTagDefinition(tagPath);
 
             if (definition is null)
@@ -216,7 +234,7 @@ namespace Logix.Driver
 
         public void Dispose()
         {
-            readWriteQueue?.Dispose();
+            channel?.Dispose();
         }
     }
 }

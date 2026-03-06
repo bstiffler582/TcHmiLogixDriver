@@ -4,12 +4,22 @@ using System.Threading.Channels;
 
 namespace Logix.Tags
 {
+    public interface ITagReadWriteQueue : IDisposable
+    {
+        public Task<Tag> EnqueueReadAsync(Tag tag);
+        public Tag EnqueueReadSync(Tag tag);
+        public Task<Tag> EnqueueInitializeAsync(Tag tag);
+        public Tag EnqueueInitializeSync(Tag tag);
+        public Task<Tag> EnqueueWriteAsync(Tag tag);
+        public Tag EnqueueWriteSync(Tag tag);
+    }
+
     /// <summary>
     /// Producer/consumer queues for managing async tag read/write operations.
     /// Ensures read/write operations are handled on a single task/thread.
     /// Executes cyclically with a max number of operations per cycle.
     /// </summary>
-    public class TagReadWriteQueue : ITagReadWriteQueue
+    internal class TagReadWriteQueue : ITagReadWriteQueue
     {
         private abstract record QueuedOperation(string TagName)
         {

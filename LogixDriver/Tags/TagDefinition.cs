@@ -4,11 +4,11 @@ namespace Logix
 {
     public class TagDefinition
     {
-        public string Name { get; set; }
-        public ushort TypeCode { get; set; }
+        public string Name { get; init; }
+        public ushort TypeCode { get; init; }
         public uint Length { get; set; }
-        public uint Offset { get; set; }
-        public uint BitOffset { get; set; }
+        public uint Offset { get; init; }
+        public uint BitOffset { get; init; }
         public string TypeName { get; set; }
         public uint[]? Dimensions { get; set; }
         public List<TagDefinition>? Children { get; set; }

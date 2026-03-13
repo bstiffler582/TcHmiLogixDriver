@@ -51,11 +51,7 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="libplctag" Version="1.5.2" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <ProjectReference Include="..\LogixDriver\LogixDriver.csproj" />
+		<PackageReference Include="LogixDriver" Version="*" />
 	</ItemGroup>
 
 	<ItemGroup>

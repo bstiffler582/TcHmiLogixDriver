@@ -51,7 +51,7 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="LogixDriver" Version="*" />
+		<PackageReference Include="LogixDriver" Version="0.1.7" />
 	</ItemGroup>
 
 	<ItemGroup>

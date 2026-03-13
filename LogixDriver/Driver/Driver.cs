@@ -64,7 +64,8 @@ namespace Logix.Driver
                 return true;
             }
             catch (Exception) 
-            { 
+            {
+                SetConnectionState(false);
                 return false;
             }
         }

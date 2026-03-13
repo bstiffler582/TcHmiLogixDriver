@@ -220,7 +220,7 @@
           "hidden": {
             "type": "boolean",
             "default": true,
-            "description": "true to hide this symbol in symbol browser and on the configuration page."
+            "description": "[deprecated] true to hide this symbol in symbol browser and on the configuration page."
           },
           "visibility": {
             "allOf": [

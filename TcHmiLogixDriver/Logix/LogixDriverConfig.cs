@@ -2,9 +2,9 @@
 
 namespace TcHmiLogixDriver.Logix
 {
-    record TargetConfig(string targetAddress, string targetSlot, int timeout = 1000, string[] tagSelector = null);
+    record TargetConfig(string targetAddress, string targetSlot, int timeout = 1000, string[]? tagSelector = null);
     class LogixDriverConfig
     {
-        public Dictionary<string, TargetConfig> Targets { get; set; }
+        public Dictionary<string, TargetConfig>? Targets { get; set; }
     }
 }

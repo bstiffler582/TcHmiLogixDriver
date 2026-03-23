@@ -12,7 +12,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
         private IDriver driver;
-        private LookupTrie<string> mappingTree;
+        private LookupTrie<string>? mappingTree;
 
         public LogixSymbol(IDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
@@ -28,7 +28,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// <param name="elements">Queue that represents requested symbol path</param>
         /// <param name="context"></param>
         /// <returns>Resolved TcHmi Value</returns>
-        protected async override Task<Value> ReadAsync(Queue<string> elements, Context context)
+        protected async override Task<Value?> ReadAsync(Queue<string> elements, Context context)
         {
             if (mappingTree is null)
             {
@@ -42,7 +42,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             }
 
             // get mapped element list with matching / partial matching path
-            var match = mappingTree.TryDescend(elements).GetPath().ToList();
+            var match = mappingTree.TryDescend(elements)!.GetPath().ToList();
 
             if (match.Count > 0)
             {
@@ -62,11 +62,13 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 while (elements.Count > 0)
                 {
                     var member = elements.Dequeue();
+                    if (readValue is null) continue;
                     if (int.TryParse(member, out var i))
                         readValue = readValue[i];
                     else
                         readValue = readValue[member];
                 }
+
                 return readValue;
             }
             else

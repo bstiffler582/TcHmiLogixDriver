@@ -23,11 +23,11 @@ namespace TcHmiLogixDriver
         private readonly ConfigListener configListener = new();
         private readonly ShutdownListener shutdownListener = new();
 
-        private LogixDriverConfig configuration;
-        private LogixDriverDiagnostics diagnostics;
+        private LogixDriverConfig? configuration;
+        private LogixDriverDiagnostics? diagnostics;
 
-        private DynamicSymbolsProvider symbolProvider;
-        private Dictionary<string, IDriver> drivers;
+        private DynamicSymbolsProvider? symbolProvider;
+        private Dictionary<string, IDriver>? drivers;
 
         private Task? connectionStateTask;
         private CancellationTokenSource? connectionStateCts;
@@ -57,19 +57,17 @@ namespace TcHmiLogixDriver
             {
                 try
                 {
-                    var disconnectedDrivers = drivers.Values.Where(d => !d.IsConnected);
-
-                    foreach (var driver in disconnectedDrivers)
+                    foreach (var driver in drivers?.Values.Where(d => !d.IsConnected)!)
                     {
                         if (driver.TryConnect())
                         {
-                            diagnostics.Targets[driver.Target.Name] = 
-                                new TargetDiagnostics(connectionState: "CONNECTED", controllerInfo: driver.ControllerInfo);
+                            diagnostics!.Targets[driver.Target.Name] =
+                                new TargetDiagnostics(isConnected: true, controllerInfo: driver.ControllerInfo);
                         }
                         else
                         {
-                            diagnostics.Targets[driver.Target.Name] = 
-                                new TargetDiagnostics(connectionState: "DISCONNECTED", controllerInfo: "");
+                            diagnostics!.Targets[driver.Target.Name] =
+                                new TargetDiagnostics(isConnected: false, controllerInfo: "");
                         }
                     }
 
@@ -101,7 +99,7 @@ namespace TcHmiLogixDriver
             foreach (var symbol in symbolProvider)
             {
                 var targetSymbolNames = domainSymbolNames.Where(s => s.Contains(symbol.Key));
-                (symbol.Value as LogixSymbol).SetMappedSymbols(targetSymbolNames);
+                (symbol.Value as LogixSymbol)!.SetMappedSymbols(targetSymbolNames);
             }
         }
 
@@ -119,7 +117,7 @@ namespace TcHmiLogixDriver
             {
                 configuration = GetConfiguration();
 
-                foreach (var targetConfig in configuration.Targets)
+                foreach (var targetConfig in configuration.Targets!)
                 {
                     var targetName = targetConfig.Key;
                     var config = targetConfig.Value;
@@ -165,19 +163,19 @@ namespace TcHmiLogixDriver
             if (driver.TryConnect())
             {
                 var info = driver.ControllerInfo;
-                var config = configuration.Targets[driver.Target.Name];
+                var config = configuration!.Targets![driver.Target.Name];
 
                 // update diagnostics
-                diagnostics.Targets[driver.Target.Name] =
-                    new TargetDiagnostics(connectionState: "CONNECTED", controllerInfo: info);
+                diagnostics!.Targets[driver.Target.Name] =
+                    new TargetDiagnostics(isConnected: true, controllerInfo: info);
 
                 // load tags for symbol browser
                 await driver.LoadTagsAsync(config.tagSelector);
 
                 // re / create symbol
-                if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
+                if (symbolProvider!.TryGetValue(driver.Target.Name, out var oldSymbol))
                 {
-                    (oldSymbol as LogixSymbol).Dispose();
+                    (oldSymbol as LogixSymbol)!.Dispose();
                     symbolProvider.Remove(driver.Target.Name);
                 }
 
@@ -186,8 +184,8 @@ namespace TcHmiLogixDriver
             else
             {
                 // update diagnostics
-                diagnostics.Targets[driver.Target.Name] =
-                    new TargetDiagnostics(connectionState: "DISCONNECTED", "");
+                diagnostics!.Targets[driver.Target.Name] =
+                    new TargetDiagnostics(isConnected: false, "");
             }
         }
 
@@ -200,7 +198,7 @@ namespace TcHmiLogixDriver
 
             try
             {
-                foreach (var command in await symbolProvider.HandleCommandsAsync(commands, context))
+                foreach (var command in await symbolProvider!.HandleCommandsAsync(commands, context))
                 {
                     var mapping = command.Mapping;
 
@@ -210,7 +208,7 @@ namespace TcHmiLogixDriver
                         {
                             case "Diagnostics":
                                 command.ExtensionResult = TcHmiLogixDriverErrorValue.TcHmiLogixDriverSuccess;
-                                command.ReadValue = diagnostics.ToValue();
+                                command.ReadValue = diagnostics!.ToValue();
                                 break;
 
                             default:
@@ -234,15 +232,15 @@ namespace TcHmiLogixDriver
         }
 
         // cleanup
-        private void onShutDown(object sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
+        private void onShutDown(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
             requestListener.OnRequestAsync -= onRequestAsync;
             configListener.OnChangeAsync -= onConfigChangeAsync;
             shutdownListener.OnShutdown -= onShutDown;
 
-            connectionStateCts.Cancel();
+            connectionStateCts!.Cancel();
 
-            foreach (var driver in drivers.Values)
+            foreach (var driver in drivers!.Values)
                 driver.Dispose();
         }
     }

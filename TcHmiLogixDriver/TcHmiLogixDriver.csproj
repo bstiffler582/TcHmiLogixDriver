@@ -10,6 +10,7 @@
 		<TargetFramework Condition="'$(VisualStudioVersion)'=='16.0' AND $([System.String]::Compare('$(TargetFramework)', 'net5.0')) &gt; 0">net5.0</TargetFramework>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<AssemblyName>TcHmiLogixDriver</AssemblyName>
+		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -73,7 +74,7 @@
 		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
-		<AssemblyVersion>0.1.6</AssemblyVersion>
+		<AssemblyVersion>0.1.7</AssemblyVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<PackageOutputPath>..\release</PackageOutputPath>
 	</PropertyGroup>

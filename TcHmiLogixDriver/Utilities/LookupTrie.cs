@@ -2,16 +2,16 @@
 
 namespace TcHmiLogixDriver.Utilities
 {
-    public class LookupTrie<TKey>
+    public class LookupTrie<TKey> where TKey : notnull
     {
         public class Node
         {
             public TKey Key { get; }
-            public Node Parent { get; }
+            public Node? Parent { get; }
             public Dictionary<TKey, Node> Children { get; }
             public bool IsTerminal { get; internal set; }
 
-            public Node(TKey key, Node parent, IEqualityComparer<TKey> comparer)
+            public Node(TKey key, Node? parent, IEqualityComparer<TKey> comparer)
             {
                 Key = key;
                 Parent = parent;
@@ -36,7 +36,7 @@ namespace TcHmiLogixDriver.Utilities
         private readonly IEqualityComparer<TKey> _comparer;
         private readonly Node _root;  // internal root with no key
 
-        public LookupTrie(IEqualityComparer<TKey> comparer = null)
+        public LookupTrie(IEqualityComparer<TKey>? comparer = null)
         {
             _comparer = comparer ?? EqualityComparer<TKey>.Default;
             _root = new Node(default!, null, _comparer);
@@ -74,7 +74,7 @@ namespace TcHmiLogixDriver.Utilities
         /// </summary>
         /// <param name="elements">Ordered sequence of elements</param>
         /// <returns>The deepest node reachable following the given sequence</returns>
-        public Node TryDescend(IEnumerable<TKey> elements)
+        public Node? TryDescend(IEnumerable<TKey> elements)
         {
             using var e = elements.GetEnumerator();
             if (!e.MoveNext())

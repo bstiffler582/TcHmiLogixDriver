@@ -36,9 +36,9 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
-                "connectionState": {
+                "isConnected": {
                   "propertyOrder": 1,
-                  "type": "string"
+                  "type": "boolean"
                 },
                 "controllerInfo": {
                   "propertyOrder": 2,
@@ -46,7 +46,7 @@
                 }
               },
               "required": [
-                "connectionState",
+                "isConnected",
                 "controllerInfo"
               ]
             }

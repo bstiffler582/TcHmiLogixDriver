@@ -6,7 +6,7 @@ namespace TcHmiLogixDriver.Logix
     record TargetDiagnostics(bool isConnected = false, string controllerInfo = "");
     class LogixDriverDiagnostics
     {
-        public Dictionary<string, TargetDiagnostics> Targets { get; set; } = new Dictionary<string, TargetDiagnostics>();
+        public Dictionary<string, TargetDiagnostics> Targets { get; } = new();
 
         public Value ToValue()
         {

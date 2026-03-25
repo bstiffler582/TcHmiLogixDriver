@@ -12,6 +12,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
         private IDriver driver;
+        private List<string> mappedSymbols = new();
         private LookupTrie<string>? mappingTree;
 
         public LogixSymbol(IDriver driver)
@@ -92,12 +93,14 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return value;
         }
 
-        public void SetMappedSymbols(IEnumerable<string> symbolNames)
+        public void UpdateMappedSymbols(IEnumerable<string> symbols)
         {
-            var symbols = symbolNames.ToList();
-            if (symbols.Count > 0)
+            if (mappedSymbols.SequenceEqual(symbols))
+                return;
+            else
             {
-                mappingTree = BuildMappingTree(symbols);
+                mappedSymbols = symbols.ToList();
+                mappingTree = BuildMappingTree(mappedSymbols);
             }
         }
 

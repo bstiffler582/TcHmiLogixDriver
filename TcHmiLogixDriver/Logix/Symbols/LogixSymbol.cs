@@ -11,7 +11,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
-        private IDriver driver;
+        private readonly IDriver driver;
         private List<string> mappedSymbols = new();
         private LookupTrie<string>? mappingTree;
 
@@ -64,9 +64,17 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 {
                     var member = elements.Dequeue();
                     if (readValue is null) continue;
+
                     if (int.TryParse(member, out var i))
-                        readValue = readValue[i];
-                    else
+                    {
+                        // array index
+                        if (readValue.IsArray)
+                            readValue = readValue[i];
+                        // bit offset
+                        else
+                            readValue = (readValue & (1 << i)) != 0;
+                    }
+                    else 
                         readValue = readValue[member];
                 }
 
@@ -80,14 +88,38 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
         protected async override Task<Value> WriteAsync(Queue<string> elements, Value value, Context context)
         {
+            var bitOffset = -1;
+
             // build tag string
             string tagName = elements.Dequeue();
             while (elements.TryDequeue(out var element))
             {
-                tagName += int.TryParse(element, out var _) ? 
-                    $"[{element}]" : $".{element}";
+                if (int.TryParse(element, out var offset))
+                {
+                    // bit offset: last element is numeric but not array type
+                    if (elements.Count == 0 && 
+                        driver.GetTagDefinitionsFlat().TryGetValue(tagName, out var definition) &&
+                        !definition.IsArray) {
+
+                        bitOffset = offset;
+                        break;
+                    }
+                    tagName += $"[{element}]";
+                }
+                else
+                    tagName += $".{element}";
             }
 
+            if (bitOffset >= 0)
+            {
+                // set / reset bit
+                var readValue = await driver.ReadTagValueAsync(tagName) as Value;
+                if (value)
+                    value = readValue |= (1 << bitOffset);
+                else
+                    value = readValue &= ~(1 << bitOffset);
+            }
+            
             await driver.WriteTagValueAsync(tagName, value);
 
             return value;

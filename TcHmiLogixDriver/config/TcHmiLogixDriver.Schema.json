@@ -27,12 +27,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "tagDefinitionCache": {
-          "type": "string",
-          "description": "Cached tag definition data for offline use",
-          "default": "",
-          "visibility": "AlwaysHide"
         }
       },
       "required": [ "targetAddress", "targetSlot", "timeout", "tagSelector" ]

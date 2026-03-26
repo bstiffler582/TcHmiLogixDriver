@@ -11,6 +11,14 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public static class LogixSchemaAdapter
     {
+        private static readonly Dictionary<string, int> bitWidths = new()
+        {
+            { "SINT",   8 }, { "USINT",  8 }, { "BYTE",   8 },
+            { "INT",   16 }, { "UINT",  16 }, { "WORD",  16 },
+            { "DINT",  32 }, { "UDINT", 32 }, { "DWORD", 32 },
+            { "LINT",  64 }, { "ULINT", 64 }, { "LWORD", 64 },
+        };
+
         /// <summary>
         /// Generates the JSON schema that represents all the types and members
         /// of the PLC server symbol. This is the information the framework uses to
@@ -42,7 +50,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             root.Add("type", "object");
             root.Add("allowMapping", false);
 
-            var extractDefinitions = (tagDefinitions.Count() > 0);
+            var extractDefinitions = (tagDefinitions.Any());
 
             return new JsonSchemaValue(root, extractDefinitions);
         }
@@ -73,7 +81,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
                     // build inner item schema and type name
                     var (innerTypeName, innerSchema) = InnerResolver(member);
 
-                    var dims = node.Dimensions ?? Array.Empty<uint>();
+                    var dims = node.Dimensions ?? [];
                     var currentDim = dims.Length > 0 ? (int)dims[0] : 1;
                     var arrTypeName = $"ARRAY_0..{currentDim - 1}_OF-{innerTypeName}";
 
@@ -130,14 +138,43 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 }
                 else
                 {
-                    // primitive type
                     var primName = node.TypeName;
+
+                    if (bitWidths.TryGetValue(primName, out var bitWidth))
+                    {
+                        var defName = $"{targetName}.{primName}";
+
+                        if (!cache.Contains(defName))
+                        {
+                            var bitProps = new Value();
+                            for (var i = 0; i < bitWidth; i++)
+                                bitProps.Add(i.ToString(), new Value { { "$ref", "tchmi:general#/definitions/BOOL" } });
+
+                            var bitObj = new Value();
+                            bitObj.Add("type", "object");
+                            bitObj.Add("properties", bitProps);
+
+                            var anyOf = new Value();
+                            anyOf.Add(new Value { { "$ref", $"tchmi:general#/definitions/{primName}" } });
+                            anyOf.Add(bitObj);
+
+                            var def = new Value();
+                            def.Add("anyOf", anyOf);
+
+                            definitions.Add(defName, def);
+                            cache.Add(defName);
+                        }
+
+                        return (primName, new Value { { "$ref", $"#/definitions/{defName}" } });
+                    }
+
+                    // non-integer primitive (REAL, LREAL, BOOL, STRING, etc.)
                     return (primName, new Value { { "$ref", $"tchmi:general#/definitions/{primName}" } });
                 }
             }
 
-            var result = InnerResolver(tag);
-            return result.schema;
+            var (typeName, schema) = InnerResolver(tag);
+            return schema;
         }
     }
 }

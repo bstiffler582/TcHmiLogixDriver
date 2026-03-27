@@ -11,14 +11,6 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public static class LogixSchemaAdapter
     {
-        private static readonly Dictionary<string, int> bitWidths = new()
-        {
-            { "SINT",   8 }, { "USINT",  8 }, { "BYTE",   8 },
-            { "INT",   16 }, { "UINT",  16 }, { "WORD",  16 },
-            { "DINT",  32 }, { "UDINT", 32 }, { "DWORD", 32 },
-            { "LINT",  64 }, { "ULINT", 64 }, { "LWORD", 64 },
-        };
-
         /// <summary>
         /// Generates the JSON schema that represents all the types and members
         /// of the PLC server symbol. This is the information the framework uses to
@@ -140,6 +132,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 {
                     var primName = node.TypeName;
 
+                    // generate bool members for bitwise addressing
                     if (bitWidths.TryGetValue(primName, out var bitWidth))
                     {
                         var defName = $"{targetName}.{primName}";
@@ -176,5 +169,13 @@ namespace TcHmiLogixDriver.Logix.Symbols
             var (typeName, schema) = InnerResolver(tag);
             return schema;
         }
+
+        private static readonly Dictionary<string, int> bitWidths = new()
+        {
+            { "SINT",   8 }, { "USINT",  8 }, { "BYTE",   8 },
+            { "INT",   16 }, { "UINT",  16 }, { "WORD",  16 },
+            { "DINT",  32 }, { "UDINT", 32 }, { "DWORD", 32 },
+            { "LINT",  64 }, { "ULINT", 64 }, { "LWORD", 64 },
+        };
     }
 }

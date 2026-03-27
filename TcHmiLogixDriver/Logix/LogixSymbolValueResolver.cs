@@ -42,6 +42,7 @@ namespace TcHmiLogixDriver.Logix
             else
             {
                 var ret = PrimitiveValueResolver(tag, definition.TypeCode, offset);
+
                 return (Code)(definition.TypeCode) switch
                 {
                     Code.BOOL => (bool)ret,
@@ -110,6 +111,26 @@ namespace TcHmiLogixDriver.Logix
 
                 PrimitiveValueWriter(tag, definition.TypeCode, write, offset);
             }
+        }
+
+        public static Value SetBit(bool bitValue, int bitOffset, Value currentValue, Code typeCode)
+        {
+            int intValue = (bitValue) ? 
+                (currentValue |= (1 << bitOffset)) :
+                intValue = currentValue &= ~(1 << bitOffset);
+
+            return typeCode switch
+            {
+                Code.SINT => (sbyte)intValue,
+                Code.BYTE or Code.USINT => (byte)intValue,
+                Code.INT => (short)intValue,
+                Code.UINT or Code.WORD => (ushort)intValue,
+                Code.DINT => (int)intValue,
+                Code.UDINT or Code.DWORD => (uint)intValue,
+                Code.LINT => (long)intValue,
+                Code.ULINT or Code.LWORD => (ulong)intValue,
+                _ => throw new NotSupportedException()
+            };
         }
     }
 }

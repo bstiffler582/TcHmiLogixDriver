@@ -48,7 +48,7 @@ namespace TcHmiLogixDriver
             return ErrorValue.HMI_SUCCESS;
         }
 
-        // Polling for connection state, updated symbol mappings
+        // Polling for connection state, update symbol mappings
         private async Task ConnectionStateAsync(CancellationToken cancel, uint interval = 5000)
         {
             using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(interval));
@@ -241,11 +241,11 @@ namespace TcHmiLogixDriver
         // cleanup
         private void onShutDown(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
+            connectionStateCts!.Cancel();
+
             requestListener.OnRequestAsync -= onRequestAsync;
             configListener.OnChangeAsync -= onConfigChangeAsync;
             shutdownListener.OnShutdown -= onShutDown;
-
-            connectionStateCts!.Cancel();
 
             foreach (var driver in drivers.Values)
                 driver.Dispose();

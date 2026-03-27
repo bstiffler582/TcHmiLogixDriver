@@ -1,3 +1,4 @@
+using Logix;
 using Logix.Driver;
 using System;
 using System.Collections.Generic;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
+using static Logix.Tags.TagMetaHelpers;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
@@ -89,6 +91,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         protected async override Task<Value> WriteAsync(Queue<string> elements, Value value, Context context)
         {
             var bitOffset = -1;
+            TagDefinition? definition = null;
 
             // build tag string
             string tagName = elements.Dequeue();
@@ -98,7 +101,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 {
                     // bit offset: last element is numeric but not array type
                     if (elements.Count == 0 && 
-                        driver.GetTagDefinitionsFlat().TryGetValue(tagName, out var definition) &&
+                        driver.GetTagDefinitionsFlat().TryGetValue(tagName, out definition) &&
                         !definition.IsArray) {
 
                         bitOffset = offset;
@@ -109,15 +112,12 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 else
                     tagName += $".{element}";
             }
-
-            if (bitOffset >= 0)
+            
+            if (bitOffset >= 0 && definition is not null)
             {
                 // set / reset bit
                 var readValue = await driver.ReadTagValueAsync(tagName) as Value;
-                if (value)
-                    value = readValue |= (1 << bitOffset);
-                else
-                    value = readValue &= ~(1 << bitOffset);
+                value = LogixSymbolValueResolver.SetBit(value, bitOffset, readValue!, (Code)definition.TypeCode);
             }
             
             await driver.WriteTagValueAsync(tagName, value);

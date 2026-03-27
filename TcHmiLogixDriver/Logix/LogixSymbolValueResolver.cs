@@ -3,6 +3,7 @@ using Logix;
 using Logix.Tags;
 using System;
 using TcHmiSrv.Core;
+using TcHmiSrv.Core.Tools.Resolving;
 using static Logix.Tags.TagMetaHelpers;
 
 namespace TcHmiLogixDriver.Logix
@@ -115,22 +116,36 @@ namespace TcHmiLogixDriver.Logix
 
         public static Value SetBit(bool bitValue, int bitOffset, Value currentValue, Code typeCode)
         {
-            long converted = (bitValue) ? 
-                currentValue |= (1 << bitOffset) :
-                currentValue &= ~(1 << bitOffset);
-
-            return typeCode switch
+            if (typeCode is Code.LINT || typeCode is Code.ULINT || typeCode is Code.LWORD)
             {
-                Code.SINT => (sbyte)converted,
-                Code.BYTE or Code.USINT => (byte)converted,
-                Code.INT => (short)converted,
-                Code.UINT or Code.WORD => (ushort)converted,
-                Code.DINT => (int)converted,
-                Code.UDINT or Code.DWORD => (uint)converted,
-                Code.LINT => (long)converted,
-                Code.ULINT or Code.LWORD => (ulong)converted,
-                _ => throw new NotSupportedException()
-            };
+                long longVal = (bitValue) ?
+                    currentValue |= (1 << bitOffset) :
+                    currentValue &= ~(1 << bitOffset);
+
+                return typeCode switch
+                {
+                    Code.LINT => (long)longVal,
+                    Code.ULINT or Code.LWORD => (ulong)longVal,
+                    _ => throw new NotSupportedException()
+                };
+            }
+            else
+            {
+                int intVal = (bitValue) ?
+                    currentValue |= (1 << bitOffset) :
+                    currentValue &= ~(1 << bitOffset);
+
+                return typeCode switch
+                {
+                    Code.SINT => (sbyte)intVal,
+                    Code.BYTE or Code.USINT => (byte)intVal,
+                    Code.INT => (short)intVal,
+                    Code.UINT or Code.WORD => (ushort)intVal,
+                    Code.DINT => (int)intVal,
+                    Code.UDINT or Code.DWORD => (uint)intVal,
+                    _ => throw new NotSupportedException()
+                };
+            }
         }
     }
 }

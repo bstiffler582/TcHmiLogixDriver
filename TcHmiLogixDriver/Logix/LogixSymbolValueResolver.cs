@@ -3,7 +3,6 @@ using Logix;
 using Logix.Tags;
 using System;
 using TcHmiSrv.Core;
-using TcHmiSrv.Core.Tools.Resolving;
 using static Logix.Tags.TagMetaHelpers;
 
 namespace TcHmiLogixDriver.Logix
@@ -43,18 +42,33 @@ namespace TcHmiLogixDriver.Logix
             else
             {
                 var ret = PrimitiveValueResolver(tag, definition.TypeCode, offset);
+                var code = (Code)definition.TypeCode;
+                var bitWidth = GetBitWidth(code);
 
-                return (Code)(definition.TypeCode) switch
+                if (bitWidth.HasValue)
+                {
+                    ulong rawBits = code switch
+                    {
+                        Code.SINT => (ulong)(byte)(sbyte)ret,
+                        Code.USINT or Code.BYTE => (ulong)(byte)ret,
+                        Code.INT => (ulong)(ushort)(short)ret,
+                        Code.UINT or Code.WORD => (ulong)(ushort)ret,
+                        Code.DINT => (ulong)(uint)(int)ret,
+                        Code.UDINT or Code.DWORD => (ulong)(uint)ret,
+                        Code.LINT => (ulong)(long)ret,
+                        Code.ULINT or Code.LWORD => (ulong)ret,
+                        _ => throw new Exception($"Bit-addressable type code:{definition.TypeCode:X} not handled")
+                    };
+
+                    var bitObj = new Value();
+                    for (var i = 0; i < bitWidth.Value; i++)
+                        bitObj.Add(i.ToString(), (rawBits & (1UL << i)) != 0);
+                    return bitObj;
+                }
+
+                return code switch
                 {
                     Code.BOOL => (bool)ret,
-                    Code.SINT => (sbyte)ret,
-                    Code.USINT => (byte)ret,
-                    Code.INT => (short)ret,
-                    Code.UINT or Code.WORD => (ushort)ret,
-                    Code.DINT => (int)ret,
-                    Code.UDINT or Code.DWORD => (uint)ret,
-                    Code.LINT => (long)ret,
-                    Code.ULINT or Code.LWORD => (ulong)ret,
                     Code.REAL => (float)ret,
                     Code.LREAL => (double)ret,
                     Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
@@ -83,8 +97,6 @@ namespace TcHmiLogixDriver.Logix
                 if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
-                var ret = new Value();
-                var members = new Value();
                 foreach (var m in definition.Children)
                 {
                     if (m.TypeCode == (ushort)Code.BOOL)
@@ -113,6 +125,15 @@ namespace TcHmiLogixDriver.Logix
                 PrimitiveValueWriter(tag, definition.TypeCode, write, offset);
             }
         }
+
+        private static int? GetBitWidth(Code code) => code switch
+        {
+            Code.SINT or Code.USINT or Code.BYTE => 8,
+            Code.INT or Code.UINT or Code.WORD => 16,
+            Code.DINT or Code.UDINT or Code.DWORD => 32,
+            Code.LINT or Code.ULINT or Code.LWORD => 64,
+            _ => null
+        };
 
         public static Value SetBit(bool bitValue, int bitOffset, Value currentValue, Code typeCode)
         {

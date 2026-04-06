@@ -47,23 +47,32 @@ namespace TcHmiLogixDriver.Logix
 
                 if (bitWidth.HasValue)
                 {
-                    ulong rawBits = code switch
+                    (Value baseValue, ulong rawBits) = code switch
                     {
-                        Code.SINT => (ulong)(byte)(sbyte)ret,
-                        Code.USINT or Code.BYTE => (ulong)(byte)ret,
-                        Code.INT => (ulong)(ushort)(short)ret,
-                        Code.UINT or Code.WORD => (ulong)(ushort)ret,
-                        Code.DINT => (ulong)(uint)(int)ret,
-                        Code.UDINT or Code.DWORD => (ulong)(uint)ret,
-                        Code.LINT => (ulong)(long)ret,
-                        Code.ULINT or Code.LWORD => (ulong)ret,
+                        Code.SINT         => ((Value)(sbyte)ret, (byte)(sbyte)ret),
+                        Code.USINT or
+                        Code.BYTE         => ((Value)(byte)ret, (byte)ret),
+                        Code.INT          => ((Value)(short)ret, (ushort)(short)ret),
+                        Code.UINT or
+                        Code.WORD         => ((Value)(ushort)ret, (ushort)ret),
+                        Code.DINT         => ((Value)(int)ret, (uint)(int)ret),
+                        Code.UDINT or
+                        Code.DWORD        => ((Value)(uint)ret, (uint)ret),
+                        Code.LINT         => ((Value)(long)ret, (ulong)(long)ret),
+                        Code.ULINT or
+                        Code.LWORD        => ((Value)(ulong)ret, (ulong)ret),
                         _ => throw new Exception($"Bit-addressable type code:{definition.TypeCode:X} not handled")
                     };
 
-                    var bitObj = new Value();
+                    var result = new Value();
+
+                    var objBits = new Value();
                     for (var i = 0; i < bitWidth.Value; i++)
-                        bitObj.Add(i.ToString(), (rawBits & (1UL << i)) != 0);
-                    return bitObj;
+                        objBits.Add(i.ToString(), (rawBits & (1UL << i)) != 0);
+
+                    result.Add(baseValue);
+                    result.Add(objBits);
+                    return objBits;
                 }
 
                 return code switch

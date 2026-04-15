@@ -27,7 +27,6 @@ namespace TcHmiLogixDriver.Logix
                 if (definition.Children is null || definition.Children.Count < 1)
                     return new Value();
 
-                var ret = new Value();
                 var members = new Value();
                 foreach (var m in definition.Children)
                 {
@@ -81,8 +80,6 @@ namespace TcHmiLogixDriver.Logix
                 if (definition.Children is null || definition.Children.Count < 1)
                     return;
 
-                var ret = new Value();
-                var members = new Value();
                 foreach (var m in definition.Children)
                 {
                     if (m.TypeCode == (ushort)Code.BOOL)

@@ -42,42 +42,18 @@ namespace TcHmiLogixDriver.Logix
             else
             {
                 var ret = PrimitiveValueResolver(tag, definition.TypeCode, offset);
-                var code = (Code)definition.TypeCode;
-                var bitWidth = GetBitWidth(code);
 
-                if (bitWidth.HasValue)
-                {
-                    (Value baseValue, ulong rawBits) = code switch
-                    {
-                        Code.SINT         => ((Value)(sbyte)ret, (byte)(sbyte)ret),
-                        Code.USINT or
-                        Code.BYTE         => ((Value)(byte)ret, (byte)ret),
-                        Code.INT          => ((Value)(short)ret, (ushort)(short)ret),
-                        Code.UINT or
-                        Code.WORD         => ((Value)(ushort)ret, (ushort)ret),
-                        Code.DINT         => ((Value)(int)ret, (uint)(int)ret),
-                        Code.UDINT or
-                        Code.DWORD        => ((Value)(uint)ret, (uint)ret),
-                        Code.LINT         => ((Value)(long)ret, (ulong)(long)ret),
-                        Code.ULINT or
-                        Code.LWORD        => ((Value)(ulong)ret, (ulong)ret),
-                        _ => throw new Exception($"Bit-addressable type code:{definition.TypeCode:X} not handled")
-                    };
-
-                    var result = new Value();
-
-                    var objBits = new Value();
-                    for (var i = 0; i < bitWidth.Value; i++)
-                        objBits.Add(i.ToString(), (rawBits & (1UL << i)) != 0);
-
-                    result.Add(baseValue);
-                    result.Add(objBits);
-                    return objBits;
-                }
-
-                return code switch
+                return (Code)(definition.TypeCode) switch
                 {
                     Code.BOOL => (bool)ret,
+                    Code.SINT => (sbyte)ret,
+                    Code.USINT => (byte)ret,
+                    Code.INT => (short)ret,
+                    Code.UINT or Code.WORD => (ushort)ret,
+                    Code.DINT => (int)ret,
+                    Code.UDINT or Code.DWORD => (uint)ret,
+                    Code.LINT => (long)ret,
+                    Code.ULINT or Code.LWORD => (ulong)ret,
                     Code.REAL => (float)ret,
                     Code.LREAL => (double)ret,
                     Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
@@ -134,15 +110,6 @@ namespace TcHmiLogixDriver.Logix
                 PrimitiveValueWriter(tag, definition.TypeCode, write, offset);
             }
         }
-
-        private static int? GetBitWidth(Code code) => code switch
-        {
-            Code.SINT or Code.USINT or Code.BYTE => 8,
-            Code.INT or Code.UINT or Code.WORD => 16,
-            Code.DINT or Code.UDINT or Code.DWORD => 32,
-            Code.LINT or Code.ULINT or Code.LWORD => 64,
-            _ => null
-        };
 
         public static Value SetBit(bool bitValue, int bitOffset, Value currentValue, Code typeCode)
         {

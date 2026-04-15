@@ -67,8 +67,15 @@ namespace TcHmiLogixDriver.Logix.Symbols
                     var member = elements.Dequeue();
                     if (readValue is null) continue;
 
-                    if (int.TryParse(member, out var i) && readValue.IsArray)
-                        readValue = readValue[i];
+                    if (int.TryParse(member, out var i))
+                    {
+                        // array index
+                        if (readValue.IsArray || readValue.IsVector)
+                            readValue = readValue[i];
+                        // bit offset
+                        else
+                            readValue = (readValue & (1 << i)) != 0;
+                    }
                     else
                         readValue = readValue[member];
                 }

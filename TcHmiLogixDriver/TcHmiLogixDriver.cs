@@ -55,21 +55,26 @@ namespace TcHmiLogixDriver
             while (await timer.WaitForNextTickAsync(cancel))
             {
                 if (initializing)
-                    return;
+                   continue;
 
                 try
                 {
-                    foreach (var driver in drivers.Values.Where(d => !d.IsConnected))
+                    foreach (var driver in drivers.Values)
                     {
-                        // try reconnect
-                        if (driver.TryConnect())
-                            diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
+                        if (!driver.IsConnected)
+                        {
+                            // try reconnect
+                            if (driver.TryConnect())
+                                diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
+                            else
+                                diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(false, "");
+                        }
                         else
-                            diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(false, "");
+                        {
+                            // update symbol mappings
+                            await UpdateMappedSymbolListAsync(driver.Target.Name);
+                        }
                     }
-
-                    // update symbol mappings
-                    await UpdateMappedSymbolListAsync();
                 }
                 catch (Exception ex)
                 {
@@ -80,7 +85,7 @@ namespace TcHmiLogixDriver
         }
 
         // request mapped symbol list from TcHmiSrv
-        private async Task UpdateMappedSymbolListAsync()
+        private async Task UpdateMappedSymbolListAsync(string targetName)
         {
             if (symbolProvider is null || symbolProvider.Values.Count < 1)
                 return;
@@ -99,7 +104,7 @@ namespace TcHmiLogixDriver
             // update symbol providers
             foreach (var symbol in symbolProvider.Where(s => s.Value is LogixSymbol))
             {
-                var targetSymbolNames = domainSymbolNames.Where(s => s.Contains(symbol.Key));
+                var targetSymbolNames = domainSymbolNames.Where(s => s.Contains(targetName));
                 (symbol.Value as LogixSymbol)!.UpdateMappedSymbols(targetSymbolNames);
             }
         }
@@ -110,20 +115,34 @@ namespace TcHmiLogixDriver
             if (e.Path != "Targets")
                 return;
 
-            // clean up drivers
+            var config = await TcHmiApplication.AsyncHost.GetConfigValueAsync(TcHmiApplication.Context, "Targets");
+
+            var targets = new Dictionary<string, TargetConfig>();
+            foreach (var target in config.Keys)
+            {
+                var targetConfig = TcHmiJsonSerializer.Deserialize<TargetConfig>(config[target].ToJson(), false);
+                targets.Add(target, targetConfig);
+            }
+
+            configuration = new LogixDriverConfig(targets);
+            await CreateDriversAsync();
+        }
+
+        private async Task CreateDriversAsync()
+        {
+            // re-initialize
+            initializing = true;
+
+            // clean up existing drivers
             foreach (var driver in drivers.Values)
                 driver.Dispose();
 
-            // re-initialize
-            initializing = true;
             drivers = new Dictionary<string, IDriver>();
             symbolProvider = new DynamicSymbolsProvider();
             diagnostics = new LogixDriverDiagnostics();
 
             try
             {
-                configuration = await GetConfigurationAsync();
-
                 foreach (var targetConfig in configuration.Targets)
                 {
                     var targetName = targetConfig.Key;
@@ -131,7 +150,7 @@ namespace TcHmiLogixDriver
 
                     // create / initialize EIP driver
                     var driver = Driver.Create(
-                        new Target(targetName, config.targetAddress, config.targetSlot), 
+                        new Target(targetName, config.targetAddress, config.targetSlot),
                         new LogixSymbolValueResolver());
 
                     drivers.Add(targetName, driver);
@@ -139,7 +158,7 @@ namespace TcHmiLogixDriver
                     var diag = new TargetDiagnostics();
                     diagnostics.Targets.Add(targetName, diag);
 
-                    await InitializeDriverAsync(driver);
+                    await LoadDriverSymbolsAsync(driver);
                 }
             }
             catch (Exception ex)
@@ -153,23 +172,8 @@ namespace TcHmiLogixDriver
             }
         }
 
-        // retrieve extension config data
-        private async Task<LogixDriverConfig> GetConfigurationAsync()
-        {
-            var config = await TcHmiApplication.AsyncHost.GetConfigValueAsync(TcHmiApplication.Context, "Targets");
-
-            var targets = new Dictionary<string, TargetConfig>();
-            foreach (var target in config.Keys)
-            {
-                var targetConfig = TcHmiJsonSerializer.Deserialize<TargetConfig>(config[target].ToJson(), false);
-                targets.Add(target, targetConfig);
-            }
-
-            return new LogixDriverConfig(targets);
-        }
-
-        // initialize driver, load tags, create symbol(s)
-        private async Task InitializeDriverAsync(IDriver driver)
+        // connect driver, load tags and create symbol(s)
+        private async Task LoadDriverSymbolsAsync(IDriver driver)
         {
             if (!configuration.Targets.TryGetValue(driver.Target.Name, out var config))
                 return;

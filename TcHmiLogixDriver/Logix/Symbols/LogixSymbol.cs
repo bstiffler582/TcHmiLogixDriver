@@ -38,8 +38,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
             if (!driver.IsConnected)
             {
-                return null;
-                throw new Exception($"Connection to target {driver.Target.Name} lost!");
+                throw new Exception($"No connection to target {driver.Target.Name}.");
             }
 
             // get mapped element list with matching / partial matching path

@@ -47,12 +47,12 @@
 	<ItemGroup>
 		<!-- Exclude runtime assets to not copy files from dependent NuGet packages to the output directory. -->
 		<!-- Declare all assets private to not make a created NuGet package dependent on them. -->
-		<PackageReference Include="Beckhoff.TwinCAT.HMI.TcHmiSrvExtNet.Core.SDK" Version="3.0.7480">
+		<PackageReference Include="Beckhoff.TwinCAT.HMI.TcHmiSrvExtNet.Core.SDK" Version="3.0.7983">
 			<ExcludeAssets>runtime</ExcludeAssets>
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="LogixDriver" Version="0.1.10" />
+		<PackageReference Include="LogixDriver" Version="0.1.4" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -74,7 +74,7 @@
 		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
-		<AssemblyVersion>0.1.10</AssemblyVersion>
+		<AssemblyVersion>0.1.11</AssemblyVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<PackageOutputPath>..\release</PackageOutputPath>
 	</PropertyGroup>

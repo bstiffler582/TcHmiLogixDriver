@@ -7,3 +7,4 @@ json-schema.org/
 *.~u
 /LogixDriver/Test/OfflineTags.json
 /LogixDriver/Test/OfflineUdts.json
+release/

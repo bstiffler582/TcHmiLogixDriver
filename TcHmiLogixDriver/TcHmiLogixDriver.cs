@@ -28,7 +28,6 @@ namespace TcHmiLogixDriver
         private DynamicSymbolsProvider symbolProvider = new();
 
         private volatile bool initializing = false;
-        private int listSymbolRequests = 10;
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -36,9 +35,9 @@ namespace TcHmiLogixDriver
             //TcHmiApplication.AsyncDebugHost.WaitForDebugger(true);
 
             // server event handling
-            requestListener.OnRequestAsync += onRequestAsync;
-            configListener.OnChangeAsync += onConfigChangeAsync;
-            shutdownListener.OnShutdown += onShutDown;
+            requestListener.OnRequestAsync += OnRequestAsync;
+            configListener.OnChangeAsync += OnConfigChangeAsync;
+            shutdownListener.OnShutdown += OnShutDown;
 
             return ErrorValue.HMI_SUCCESS;
         }
@@ -63,33 +62,8 @@ namespace TcHmiLogixDriver
             }
         }
 
-        // request mapped symbol list from TcHmiSrv
-        private async Task UpdateMappedSymbolListAsync()
-        {
-            if (symbolProvider is null || symbolProvider.Values.Count < 1)
-                return;
-
-            // read all mapped symbols
-            var (result, ctx, cmd) = await TcHmiApplication.AsyncHost.ExecuteAsync(
-                TcHmiApplication.Context, new Command("ListSymbols"));
-
-            if (result != ErrorValue.HMI_SUCCESS)
-                return;
-
-            // filter for TcHmiLogixDriver symbols
-            var domainSymbolNames = cmd.ReadValue.Keys
-                .Where(s => s.StartsWith(ctx.Domain));
-
-            // update symbol providers
-            foreach (var symbol in symbolProvider.Where(s => s.Value is LogixSymbol))
-            {
-                var targetSymbolNames = domainSymbolNames.Where(s => s.Contains(symbol.Key));
-                (symbol.Value as LogixSymbol)!.UpdateMappedSymbols(targetSymbolNames);
-            }
-        }
-
         // configuration updated
-        private async Task onConfigChangeAsync(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
+        private async Task OnConfigChangeAsync(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
         {
             if (e.Path != "Targets")
                 return;
@@ -189,7 +163,7 @@ namespace TcHmiLogixDriver
         }
 
         // Called when a client requests a symbol from the domain of the TwinCAT HMI server extension.
-        private async Task onRequestAsync(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
+        private async Task OnRequestAsync(object sender, TcHmiSrv.Core.Listeners.RequestListenerEventArgs.OnRequestEventArgs e)
         {
             var ret = ErrorValue.HMI_SUCCESS;
             var context = e.Context;
@@ -197,10 +171,11 @@ namespace TcHmiLogixDriver
 
             try
             {
-                if (commands.Any(c => c.Mapping == "ListSymbols") && listSymbolRequests >= 10)
-                    await UpdateMappedSymbolListAsync();
-                else
-                    listSymbolRequests++;
+                if (commands.Count == 1 && commands.First().Mapping == "ListSymbols")
+                {
+                    foreach (var symbol in symbolProvider.Values)
+                        (symbol as LogixSymbol)!.UpdateMappedSymbols();
+                }
 
                 foreach (var command in await symbolProvider!.HandleCommandsAsync(commands, context))
                 {
@@ -236,11 +211,11 @@ namespace TcHmiLogixDriver
         }
 
         // cleanup
-        private void onShutDown(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
+        private void OnShutDown(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
-            requestListener.OnRequestAsync -= onRequestAsync;
-            configListener.OnChangeAsync -= onConfigChangeAsync;
-            shutdownListener.OnShutdown -= onShutDown;
+            requestListener.OnRequestAsync -= OnRequestAsync;
+            configListener.OnChangeAsync -= OnConfigChangeAsync;
+            shutdownListener.OnShutdown -= OnShutDown;
 
             foreach (var driver in drivers.Values)
             {

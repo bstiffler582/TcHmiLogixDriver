@@ -5,20 +5,22 @@ using System.Linq;
 using System.Threading.Tasks;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
+using TcHmiSrv.Core.General;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
-        private IDriver driver;
+        private readonly IDriver driver;
         private List<string> mappedSymbols = new();
-        private LookupTrie<string>? mappingTree;
+        private LookupTrie<string> mappingTree = new(StringComparer.OrdinalIgnoreCase);
 
         public LogixSymbol(IDriver driver)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
         {
             this.driver = driver;
+            UpdateMappedSymbols();
         }
 
         /// <summary>
@@ -31,50 +33,41 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// <returns>Resolved TcHmi Value</returns>
         protected async override Task<Value?> ReadAsync(Queue<string> elements, Context context)
         {
-            if (mappingTree is null)
-            {
-                throw new Exception($"No symbols mapped for target {driver.Target.Name}");
-            }
-
             if (!driver.IsConnected)
-            {
                 throw new Exception($"No connection to target {driver.Target.Name}.");
-            }
 
             // get mapped element list with matching / partial matching path
-            var match = mappingTree.TryDescend(elements)!.GetPath().ToList();
+            var node = mappingTree.TryDescend(elements);
 
-            if (match.Count > 0)
+            if (node is null)
+                throw new Exception($"Requested symbol path: {string.Join(".", elements)} not found in map tree.");
+
+            var match = node.GetPath().ToList();
+
+            elements.Dequeue();
+
+            // build tag string
+            var tagName = match.Aggregate((acc, s) =>
             {
                 elements.Dequeue();
+                return int.TryParse(s, out var _) ? acc += $"[{s}]" :
+                    acc += $".{s}";
+            });
 
-                // build tag string
-                var tagName = match.Aggregate((acc, s) =>
-                {
-                    elements.Dequeue();
-                    return int.TryParse(s, out var _) ? acc += $"[{s}]" :
-                        acc += $".{s}";
-                });
+            var readValue = await driver.ReadTagValueAsync(tagName) as Value;
 
-                var readValue = await driver.ReadTagValueAsync(tagName) as Value;
-
-                // generate return value
-                while (elements.Count > 0)
-                {
-                    var member = elements.Dequeue();
-                    if (readValue is null) continue;
-                    if (int.TryParse(member, out var i))
-                        readValue = readValue[i];
-                    else
-                        readValue = readValue[member];
-                }
-
-                return readValue;
-            }
-            else
+            // generate return value
+            while (elements.Count > 0)
             {
-                throw new Exception($"Requested symbol path: {string.Join(".", elements)} not found in map tree.");
+                var member = elements.Dequeue();
+                if (readValue is null) continue;
+                if (int.TryParse(member, out var i))
+                    readValue = readValue[i];
+                else
+                    readValue = readValue[member];
             }
+
+            return readValue;
         }
 
         protected async override Task<Value> WriteAsync(Queue<string> elements, Value value, Context context)
@@ -92,8 +85,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return value;
         }
 
-        public void UpdateMappedSymbols(IEnumerable<string> symbols)
+        public void UpdateMappedSymbols()
         {
+            var symbols = GetMappedSymbols();
             if (mappedSymbols.SequenceEqual(symbols))
                 return;
             else
@@ -117,6 +111,24 @@ namespace TcHmiLogixDriver.Logix.Symbols
             }
 
             return tree;
+        }
+
+        // request mapped symbol list from TcHmiSrv
+        private IEnumerable<string> GetMappedSymbols()
+        {
+            var cmd = new Command("ListSymbols");
+            var ctx = TcHmiApplication.Context;
+
+            var res = TcHmiApplication.AsyncHost.Execute(ref ctx, ref cmd);
+
+            if (res != ErrorValue.HMI_SUCCESS)
+                return Enumerable.Empty<string>();
+
+            // filter for TcHmiLogixDriver symbols
+            var domainSymbolNames = cmd.ReadValue.Keys
+                .Where(s => s.StartsWith(ctx.Domain));
+
+            return domainSymbolNames.Where(s => s.Contains(driver.Target.Name));
         }
     }
 }

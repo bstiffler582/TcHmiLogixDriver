@@ -52,7 +52,7 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="LogixDriver" Version="0.1.4" />
+		<PackageReference Include="LogixDriver" Version="0.1.5" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -74,7 +74,7 @@
 		<RepositoryUrl>https://github.com/bstiffler582/TcHmiLogixDriver</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageTags>twincat hmi rockwell ab eip cip</PackageTags>
-		<AssemblyVersion>0.1.11</AssemblyVersion>
+		<AssemblyVersion>0.1.15</AssemblyVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<PackageOutputPath>..\release</PackageOutputPath>
 	</PropertyGroup>

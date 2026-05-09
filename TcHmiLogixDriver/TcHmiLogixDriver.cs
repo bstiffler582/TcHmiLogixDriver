@@ -133,8 +133,7 @@ namespace TcHmiLogixDriver
             }
             catch (Exception ex)
             {
-                System.IO.File.AppendAllText("configLoad.log", $"\n{DateTime.Now.ToString()}\n{ex.Message}\n{ex.StackTrace}\n");
-                Console.WriteLine("Error loading configuration: " + ex.ToString());
+                await TcHmiAsyncLogger.SendAsync(Severity.Error, $"{ex.Message}\n{ex.StackTrace}", []);
             }
             finally
             {
@@ -174,7 +173,7 @@ namespace TcHmiLogixDriver
                 if (commands.Count == 1 && commands.First().Mapping == "ListSymbols")
                 {
                     foreach (var symbol in symbolProvider.Values)
-                        (symbol as LogixSymbol)!.UpdateMappedSymbols();
+                        await (symbol as LogixSymbol)!.UpdateMappedSymbolsAsync();
                 }
 
                 foreach (var command in await symbolProvider!.HandleCommandsAsync(commands, context))
@@ -200,13 +199,13 @@ namespace TcHmiLogixDriver
                     {
                         command.ExtensionResult = Convert.ToUInt32(TcHmiLogixDriverErrorValue.TcHmiLogixDriverFail);
                         command.ResultString =
-                            await TcHmiAsyncLogger.LocalizeAsync(context, "ERROR_CALL_COMMAND", mapping, ex.ToString());
+                            await TcHmiAsyncLogger.LocalizeAsync(context, "ERROR_CALL_COMMAND", mapping, ex.Message);
                     }
                 }
             }
             catch (Exception ex)
             {
-                throw new TcHmiException(ex.ToString(), ret == ErrorValue.HMI_SUCCESS ? ErrorValue.HMI_E_EXTENSION : ret);
+                throw new TcHmiException(ex.Message, ret == ErrorValue.HMI_SUCCESS ? ErrorValue.HMI_E_EXTENSION : ret);
             }
         }
 

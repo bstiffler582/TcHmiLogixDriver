@@ -20,7 +20,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
         {
             this.driver = driver;
-            UpdateMappedSymbols();
+            UpdateMappedSymbolsAsync().GetAwaiter();
         }
 
         /// <summary>
@@ -34,7 +34,7 @@ namespace TcHmiLogixDriver.Logix.Symbols
         protected async override Task<Value?> ReadAsync(Queue<string> elements, Context context)
         {
             if (!driver.IsConnected)
-                throw new Exception($"No connection to target {driver.Target.Name}.");
+                throw new Exception($"Driver {driver.Target.Name} disconnected.");
 
             // get mapped element list with matching / partial matching path
             var node = mappingTree.TryDescend(elements);
@@ -72,6 +72,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
 
         protected async override Task<Value> WriteAsync(Queue<string> elements, Value value, Context context)
         {
+            if (!driver.IsConnected)
+                throw new Exception($"No connection to target {driver.Target.Name}.");
+
             // build tag string
             string tagName = elements.Dequeue();
             while (elements.TryDequeue(out var element))
@@ -85,9 +88,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
             return value;
         }
 
-        public void UpdateMappedSymbols()
+        public async Task UpdateMappedSymbolsAsync()
         {
-            var symbols = GetMappedSymbols();
+            var symbols = await GetMappedSymbolsAsync();
             if (mappedSymbols.SequenceEqual(symbols))
                 return;
             else
@@ -114,12 +117,10 @@ namespace TcHmiLogixDriver.Logix.Symbols
         }
 
         // request mapped symbol list from TcHmiSrv
-        private IEnumerable<string> GetMappedSymbols()
+        private async Task<IEnumerable<string>> GetMappedSymbolsAsync()
         {
-            var cmd = new Command("ListSymbols");
-            var ctx = TcHmiApplication.Context;
-
-            var res = TcHmiApplication.AsyncHost.Execute(ref ctx, ref cmd);
+            var (res, ctx, cmd) = 
+                await TcHmiApplication.AsyncHost.ExecuteAsync(TcHmiApplication.Context, new Command("ListSymbols"));
 
             if (res != ErrorValue.HMI_SUCCESS)
                 return Enumerable.Empty<string>();

@@ -25,6 +25,7 @@ namespace TcHmiLogixDriver
         private LogixDriverConfig configuration = new();
         private LogixDriverDiagnostics diagnostics = new();
         private Dictionary<string, IDriver> drivers = new();
+        private Dictionary<string, LogixDriverReconnect> reconnectors = new();
         private DynamicSymbolsProvider symbolProvider = new();
 
         private volatile bool initializing = false;
@@ -52,7 +53,7 @@ namespace TcHmiLogixDriver
             if (!e.IsConnected)
             {
                 diagnostics.Targets[driver!.Target.Name] = new TargetDiagnostics(false, driver.ControllerInfo);
-                LogixDriverDiagnostics.TryConnectDriver(driver);
+                reconnectors[driver!.Target.Name].RequestReconnect();
             }
             else
             {
@@ -120,6 +121,9 @@ namespace TcHmiLogixDriver
                     var diag = new TargetDiagnostics();
                     diagnostics.Targets.Add(targetName, diag);
 
+                    var reconnector = new LogixDriverReconnect(driver);
+                    reconnectors.Add(targetName, reconnector);
+
                     if (driver.TryConnect())
                     {
                         diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
@@ -127,7 +131,7 @@ namespace TcHmiLogixDriver
                     }
                     else
                     {
-                        LogixDriverDiagnostics.TryConnectDriver(driver);
+                        reconnector.RequestReconnect();
                     }
                 }
             }
@@ -215,6 +219,9 @@ namespace TcHmiLogixDriver
             requestListener.OnRequestAsync -= OnRequestAsync;
             configListener.OnChangeAsync -= OnConfigChangeAsync;
             shutdownListener.OnShutdown -= OnShutDown;
+
+            foreach (var recon in reconnectors.Values)
+                recon.Dispose();
 
             foreach (var driver in drivers.Values)
             {

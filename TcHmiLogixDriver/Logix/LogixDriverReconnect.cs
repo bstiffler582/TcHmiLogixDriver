@@ -7,7 +7,7 @@ namespace TcHmiLogixDriver.Logix
 {
     public sealed class LogixDriverReconnect : IDisposable
     {
-        private static readonly TimeSpan[] Backoff =
+        private static readonly TimeSpan[] backoff =
         {
             TimeSpan.FromSeconds(2),
             TimeSpan.FromSeconds(5),
@@ -36,7 +36,7 @@ namespace TcHmiLogixDriver.Logix
 
             if (!reconnectGate.Wait(0))
                 return;
-
+            
             reconnectTask = RunReconnectLoopAsync();
         }
 
@@ -48,7 +48,7 @@ namespace TcHmiLogixDriver.Logix
 
                 while (!shutdownCts.IsCancellationRequested)
                 {
-                    var delay = Backoff[Math.Min(attempt, Backoff.Length - 1)];
+                    var delay = backoff[Math.Min(attempt, backoff.Length - 1)];
 
                     try
                     {
@@ -61,12 +61,8 @@ namespace TcHmiLogixDriver.Logix
 
                     try
                     {
-                        bool connected = await driver.TryConnectAsync(shutdownCts.Token);
-
-                        if (connected)
-                        {
+                        if (await driver.TryConnectAsync(shutdownCts.Token))
                             return;
-                        }
                     }
                     catch (OperationCanceledException)
                     {

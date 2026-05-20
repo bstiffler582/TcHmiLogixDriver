@@ -38,7 +38,7 @@ namespace TcHmiLogixDriver
             // server event handling
             requestListener.OnRequestAsync += OnRequestAsync;
             configListener.OnChangeAsync += OnConfigChangeAsync;
-            shutdownListener.OnShutdown += OnShutDown;
+            shutdownListener.OnShutdownAsync += OnShutdownAsync;
 
             return ErrorValue.HMI_SUCCESS;
         }
@@ -214,14 +214,17 @@ namespace TcHmiLogixDriver
         }
 
         // cleanup
-        private void OnShutDown(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
+        private async Task OnShutdownAsync(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
         {
             requestListener.OnRequestAsync -= OnRequestAsync;
             configListener.OnChangeAsync -= OnConfigChangeAsync;
-            shutdownListener.OnShutdown -= OnShutDown;
+            shutdownListener.OnShutdownAsync -= OnShutdownAsync;
 
             foreach (var recon in reconnectors.Values)
+            {
+                await recon.StopAsync();
                 recon.Dispose();
+            }
 
             foreach (var driver in drivers.Values)
             {

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using TcHmiLogixDriver.Logix;
 using TcHmiLogixDriver.Logix.Symbols;
@@ -28,7 +29,7 @@ namespace TcHmiLogixDriver
         private Dictionary<string, LogixDriverReconnect> reconnectors = new();
         private DynamicSymbolsProvider symbolProvider = new();
 
-        private volatile bool initializing = false;
+        private readonly SemaphoreSlim initialize = new(1, 1);
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -45,15 +46,12 @@ namespace TcHmiLogixDriver
 
         private void DriverConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)
         {
-            if (initializing)
-                return;
-
             var driver = sender as IDriver;
 
             if (!e.IsConnected)
             {
                 diagnostics.Targets[driver!.Target.Name] = new TargetDiagnostics(false, driver.ControllerInfo);
-                reconnectors[driver!.Target.Name].RequestReconnect();
+                reconnectors[driver!.Target.Name].StartReconnect();
             }
             else
             {
@@ -84,19 +82,17 @@ namespace TcHmiLogixDriver
 
         private async Task CreateDriversAsync()
         {
-            // re-initialize
-            initializing = true;
+            // prevent re-entry
+            if (!await initialize.WaitAsync(0))
+                return;
 
             // clean up existing drivers
-            foreach (var driver in drivers.Values)
-            {
-                driver.ConnectionStateChanged -= DriverConnectionStateChanged; 
-                driver.Dispose();
-            }
+            await DriverCleanupAsync();
 
             drivers = new Dictionary<string, IDriver>();
             symbolProvider = new DynamicSymbolsProvider();
             diagnostics = new LogixDriverDiagnostics();
+            reconnectors = new Dictionary<string, LogixDriverReconnect>();
 
             try
             {
@@ -105,7 +101,7 @@ namespace TcHmiLogixDriver
                     var targetName = targetConfig.Key;
                     var config = targetConfig.Value;
 
-                    // create / initialize EIP driver
+                    // create / initialize driver
                     var driver = Driver.Create(
                         new Target(
                             name: targetName, 
@@ -115,24 +111,23 @@ namespace TcHmiLogixDriver
                             heartbeatInterval: TimeSpan.FromSeconds(5)),
                         new LogixSymbolValueResolver());
 
-                    driver.ConnectionStateChanged += DriverConnectionStateChanged;
-                    drivers.Add(targetName, driver);
-
-                    var diag = new TargetDiagnostics();
-                    diagnostics.Targets.Add(targetName, diag);
-
                     var reconnector = new LogixDriverReconnect(driver);
+
+                    drivers.Add(targetName, driver);
+                    diagnostics.Targets.Add(targetName, new TargetDiagnostics());
                     reconnectors.Add(targetName, reconnector);
 
-                    if (driver.TryConnect())
+                    if (await driver.TryConnectAsync())
                     {
                         diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
                         await LoadDriverSymbolsAsync(driver);
                     }
                     else
                     {
-                        reconnector.RequestReconnect();
+                        reconnector.StartReconnect();
                     }
+
+                    driver.ConnectionStateChanged += DriverConnectionStateChanged;
                 }
             }
             catch (Exception ex)
@@ -141,7 +136,7 @@ namespace TcHmiLogixDriver
             }
             finally
             {
-                initializing = false;
+                initialize.Release();
             }
         }
 
@@ -213,13 +208,8 @@ namespace TcHmiLogixDriver
             }
         }
 
-        // cleanup
-        private async Task OnShutdownAsync(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
+        private async Task DriverCleanupAsync()
         {
-            requestListener.OnRequestAsync -= OnRequestAsync;
-            configListener.OnChangeAsync -= OnConfigChangeAsync;
-            shutdownListener.OnShutdownAsync -= OnShutdownAsync;
-
             foreach (var recon in reconnectors.Values)
             {
                 await recon.StopAsync();
@@ -231,6 +221,18 @@ namespace TcHmiLogixDriver
                 driver.ConnectionStateChanged -= DriverConnectionStateChanged;
                 driver.Dispose();
             }
+        }
+
+        // cleanup
+        private async Task OnShutdownAsync(object? sender, TcHmiSrv.Core.Listeners.ShutdownListenerEventArgs.OnShutdownEventArgs e)
+        {
+            requestListener.OnRequestAsync -= OnRequestAsync;
+            configListener.OnChangeAsync -= OnConfigChangeAsync;
+            shutdownListener.OnShutdownAsync -= OnShutdownAsync;
+            
+            await DriverCleanupAsync();
+            
+            initialize.Dispose();
         }
     }
 }

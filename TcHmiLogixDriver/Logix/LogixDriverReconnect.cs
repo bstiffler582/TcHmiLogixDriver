@@ -2,6 +2,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using TcHmiSrv.Core;
+using TcHmiSrv.Core.General;
 
 namespace TcHmiLogixDriver.Logix
 {
@@ -30,7 +32,7 @@ namespace TcHmiLogixDriver.Logix
         /// Starts a reconnect loop if one is not already running.
         /// Duplicate calls while reconnecting are ignored.
         /// </summary>
-        public void RequestReconnect()
+        public void StartReconnect()
         {
             ThrowIfDisposed();
 
@@ -68,9 +70,10 @@ namespace TcHmiLogixDriver.Logix
                     {
                         return;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // optional: log exception
+                        if (attempt == 0)
+                            await TcHmiAsyncLogger.SendAsync(Severity.Warning, ex.Message, []);
                     }
 
                     attempt++;

@@ -56,7 +56,8 @@ namespace TcHmiLogixDriver
             else
             {
                 diagnostics.Targets[driver!.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
-                if (!symbolProvider.ContainsKey(driver.Target.Name))
+                // load tag tree if not initialized or in engineering environment
+                if (!symbolProvider.ContainsKey(driver.Target.Name) || TcHmiApplication.Path.Contains(".engineering_servers"))
                     LoadDriverSymbolsAsync(driver).GetAwaiter();
             }
         }

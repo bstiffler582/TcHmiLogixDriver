@@ -1,4 +1,3 @@
-using libplctag;
 using Logix;
 using Logix.Tags;
 using System;
@@ -9,7 +8,7 @@ namespace TcHmiLogixDriver.Logix
 {
     public class LogixSymbolValueResolver : TagValueResolverBase<Value>
     {
-        public override Value ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
+        public override Value ResolveValue(byte[] buffer, TagDefinition definition, int offset = 0)
         {
             if (IsArray(definition.TypeCode))
             {
@@ -18,7 +17,7 @@ namespace TcHmiLogixDriver.Logix
 
                 var members = new Value();
                 foreach (var m in definition.Children)
-                    members.Add(ResolveValue(tag, m, offset + (int)m.Offset));
+                    members.Add(ResolveValue(buffer, m, offset + (int)m.Offset));
 
                 return members;
             }
@@ -31,21 +30,21 @@ namespace TcHmiLogixDriver.Logix
                 foreach (var m in definition.Children)
                 {
                     if (m.TypeCode == (ushort)Code.BOOL)
-                        members.Add(m.Name, ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset));
+                        members.Add(m.Name, ResolveValue(buffer, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset));
                     else
-                        members.Add(m.Name, ResolveValue(tag, m, offset + (int)m.Offset));
+                        members.Add(m.Name, ResolveValue(buffer, m, offset + (int)m.Offset));
                 }
 
                 return members;
             }
             else
             {
-                var ret = PrimitiveValueResolver(tag, definition.TypeCode, offset);
+                var ret = PrimitiveValueResolver(buffer, definition.TypeCode, offset);
                 return (Code)(definition.TypeCode) switch
                 {
                     Code.BOOL => (bool)ret,
                     Code.SINT => (sbyte)ret,
-                    Code.USINT => (byte)ret,
+                    Code.USINT or Code.BYTE => (byte)ret,
                     Code.INT => (short)ret,
                     Code.UINT or Code.WORD => (ushort)ret,
                     Code.DINT => (int)ret,
@@ -61,7 +60,7 @@ namespace TcHmiLogixDriver.Logix
             }
         }
 
-        public override void WriteTagBuffer(Tag tag, TagDefinition definition, Value value, int offset = 0)
+        public override void WriteTagBuffer(byte[] buffer, TagDefinition definition, Value value, int offset = 0)
         {
             if (IsArray(definition.TypeCode))
             {
@@ -71,7 +70,7 @@ namespace TcHmiLogixDriver.Logix
                 foreach (var m in definition.Children)
                 {
                     int.TryParse(m.Name, out var i);
-                    WriteTagBuffer(tag, m, value[i], offset + (int)m.Offset);
+                    WriteTagBuffer(buffer, m, value[i], offset + (int)m.Offset);
                 }
 
             }
@@ -82,10 +81,11 @@ namespace TcHmiLogixDriver.Logix
 
                 foreach (var m in definition.Children)
                 {
+                    // BOOL members are addressed by bit offset, everything else by byte offset
                     if (m.TypeCode == (ushort)Code.BOOL)
-                        WriteTagBuffer(tag, m, value[m.Name], offset + (int)m.Offset);
+                        WriteTagBuffer(buffer, m, value[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
                     else
-                        WriteTagBuffer(tag, m, value[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
+                        WriteTagBuffer(buffer, m, value[m.Name], offset + (int)m.Offset);
                 }
             }
             else
@@ -95,9 +95,12 @@ namespace TcHmiLogixDriver.Logix
                     Code.BOOL => value.GetBool(),
                     Code.SINT => value.GetSByte(),
                     Code.USINT or Code.BYTE => value.GetByte(),
-                    Code.INT or Code.UINT or Code.WORD => value.GetInt16(),
-                    Code.DINT or Code.UDINT or Code.DWORD => value.GetInt32(),
-                    Code.LINT or Code.ULINT or Code.LWORD => value.GetInt64(),
+                    Code.INT => value.GetInt16(),
+                    Code.UINT or Code.WORD => value.GetUInt16(),
+                    Code.DINT => value.GetInt32(),
+                    Code.UDINT or Code.DWORD => value.GetUInt32(),
+                    Code.LINT => value.GetInt64(),
+                    Code.ULINT or Code.LWORD => value.GetUInt64(),
                     Code.REAL => value.GetSingle(),
                     Code.LREAL => value.GetDouble(),
                     Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
@@ -105,7 +108,7 @@ namespace TcHmiLogixDriver.Logix
                     _ => throw new Exception($"Primitive type code:{definition.TypeCode:X} not handled")
                 };
 
-                PrimitiveValueWriter(tag, definition.TypeCode, write, offset);
+                PrimitiveValueWriter(buffer, definition.TypeCode, write, offset);
             }
         }
     }

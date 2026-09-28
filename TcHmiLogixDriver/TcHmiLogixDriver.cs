@@ -1,4 +1,4 @@
-﻿using Logix.Driver;
+using Logix.Driver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,12 +24,19 @@ namespace TcHmiLogixDriver
         private readonly ShutdownListener shutdownListener = new();
 
         private LogixDriverConfig configuration = new();
-        private LogixDriverDiagnostics diagnostics = new();
-        private Dictionary<string, IDriver> drivers = new();
-        private Dictionary<string, LogixDriverReconnect> reconnectors = new();
-        private DynamicSymbolsProvider symbolProvider = new();
+
+        // Shared between request handling and driver connection events (raised on driver monitor
+        // threads). Published by reference swap; drivers and symbolProvider are never mutated after
+        // publishing (symbolProvider is copy-on-write), diagnostics entries are concurrent.
+        private volatile IReadOnlyDictionary<string, IDriver> drivers = new Dictionary<string, IDriver>();
+        private volatile DynamicSymbolsProvider symbolProvider = new();
+        private volatile LogixDriverDiagnostics diagnostics = new();
 
         private readonly SemaphoreSlim initialize = new(1, 1);
+        // Serializes symbol loads and every publish of symbolProvider/drivers.
+        private readonly SemaphoreSlim symbolsGate = new(1, 1);
+
+        private static bool IsEngineering => TcHmiApplication.Path.Contains(".engineering_servers");
 
         // Called after the TwinCAT HMI server loaded the server extension.
         public ErrorValue Init()
@@ -44,23 +51,22 @@ namespace TcHmiLogixDriver
             return ErrorValue.HMI_SUCCESS;
         }
 
+        // Raised on the driver's connection monitor thread: keep it quick and non-blocking.
+        // Reconnection is handled by the driver itself; only diagnostics and the tag tree need updating.
         private void DriverConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)
         {
-            var driver = sender as IDriver;
+            // ignore events from drivers being torn down by a config change
+            if (sender is not IDriver driver || !IsCurrent(driver))
+                return;
 
-            if (!e.IsConnected)
-            {
-                diagnostics.Targets[driver!.Target.Name] = new TargetDiagnostics(false, driver.ControllerInfo);
-                reconnectors[driver!.Target.Name].StartReconnect();
-            }
-            else
-            {
-                diagnostics.Targets[driver!.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
-                // load tag tree if not initialized or in engineering environment
-                if (!symbolProvider.ContainsKey(driver.Target.Name) || TcHmiApplication.Path.Contains(".engineering_servers"))
-                    LoadDriverSymbolsAsync(driver).GetAwaiter();
-            }
+            diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(e.IsConnected, driver.ControllerInfo);
+
+            if (e.IsConnected)
+                _ = LoadDriverSymbolsAsync(driver);
         }
+
+        private bool IsCurrent(IDriver driver) =>
+            drivers.TryGetValue(driver.Target.Name, out var current) && ReferenceEquals(current, driver);
 
         // configuration updated
         private async Task OnConfigChangeAsync(object sender, TcHmiSrv.Core.Listeners.ConfigListenerEventArgs.OnChangeEventArgs e)
@@ -83,53 +89,54 @@ namespace TcHmiLogixDriver
 
         private async Task CreateDriversAsync()
         {
-            // prevent re-entry
-            if (!await initialize.WaitAsync(0))
-                return;
-
-            // clean up existing drivers
-            await DriverCleanupAsync();
-
-            drivers = new Dictionary<string, IDriver>();
-            symbolProvider = new DynamicSymbolsProvider();
-            diagnostics = new LogixDriverDiagnostics();
-            reconnectors = new Dictionary<string, LogixDriverReconnect>();
+            // Wait rather than skip: a config change arriving mid-create must still be applied.
+            // Each pass reads the latest configuration.
+            await initialize.WaitAsync();
 
             try
             {
-                foreach (var targetConfig in configuration.Targets)
-                {
-                    var targetName = targetConfig.Key;
-                    var config = targetConfig.Value;
+                var newDrivers = new Dictionary<string, IDriver>();
+                var newDiagnostics = new LogixDriverDiagnostics();
 
-                    // create / initialize driver
+                foreach (var (targetName, config) in configuration.Targets)
+                {
                     var driver = Driver.Create(
                         new Target(
-                            name: targetName, 
-                            gateway: config.targetAddress, 
+                            name: targetName,
+                            gateway: config.targetAddress,
                             path: config.targetSlot,
                             timeoutMs: config.timeout,
                             heartbeatInterval: TimeSpan.FromSeconds(5)),
                         new LogixSymbolValueResolver());
 
-                    var reconnector = new LogixDriverReconnect(driver);
-
-                    drivers.Add(targetName, driver);
-                    diagnostics.Targets.Add(targetName, new TargetDiagnostics());
-                    reconnectors.Add(targetName, reconnector);
-
-                    if (await driver.TryConnectAsync())
-                    {
-                        diagnostics.Targets[driver.Target.Name] = new TargetDiagnostics(true, driver.ControllerInfo);
-                        await LoadDriverSymbolsAsync(driver);
-                    }
-                    else
-                    {
-                        reconnector.StartReconnect();
-                    }
-
-                    driver.ConnectionStateChanged += DriverConnectionStateChanged;
+                    newDrivers.Add(targetName, driver);
+                    newDiagnostics.Targets[targetName] = new TargetDiagnostics();
                 }
+
+                IEnumerable<IDriver> oldDrivers;
+                await symbolsGate.WaitAsync();
+                try
+                {
+                    // Publish before connecting so the connection events below are recognised as current.
+                    // Under symbolsGate so an in-progress symbol load for an old driver can't publish afterwards.
+                    oldDrivers = drivers.Values;
+                    diagnostics = newDiagnostics;
+                    symbolProvider = new DynamicSymbolsProvider();
+                    drivers = newDrivers;
+                }
+                finally
+                {
+                    symbolsGate.Release();
+                }
+
+                DriverCleanup(oldDrivers);
+
+                foreach (var driver in newDrivers.Values)
+                    driver.ConnectionStateChanged += DriverConnectionStateChanged;
+
+                // Symbols load from the Connected event (subscribed above, before any transition can happen),
+                // and a failed first attempt is retried by the driver's reconnect loop.
+                await Task.WhenAll(newDrivers.Values.Select(d => d.TryConnectAsync()));
             }
             catch (Exception ex)
             {
@@ -141,23 +148,48 @@ namespace TcHmiLogixDriver
             }
         }
 
-        // connect driver, load tags and create symbol provider
+        // Loads the driver's tag tree and (re)creates its symbol. Fire-and-forget from connection
+        // events, so it logs rather than throws.
         private async Task LoadDriverSymbolsAsync(IDriver driver)
         {
-            if (!configuration.Targets.TryGetValue(driver.Target.Name, out var config))
-                return;
+            var targetName = driver.Target.Name;
 
-            if (driver.IsConnected)
+            await symbolsGate.WaitAsync();
+            try
             {
+                // Outside engineering the tag tree is loaded once; in engineering it's reloaded on every
+                // connect, since the PLC program may have been changed.
+                if (!IsCurrent(driver) || !driver.IsConnected)
+                    return;
+                if (symbolProvider.ContainsKey(targetName) && !IsEngineering)
+                    return;
+                if (!configuration.Targets.TryGetValue(targetName, out var config))
+                    return;
+
                 await driver.LoadTagsAsync(config.tagSelector);
 
-                // re / create symbol
-                if (symbolProvider.TryGetValue(driver.Target.Name, out var oldSymbol))
+                // copy-on-write: requests may be enumerating the current provider
+                var current = symbolProvider;
+                var next = new DynamicSymbolsProvider();
+                foreach (var entry in current)
                 {
-                    (oldSymbol as LogixSymbol)!.Dispose();
-                    symbolProvider.Remove(driver.Target.Name);
+                    if (entry.Key != targetName)
+                        next.Add(entry.Key, entry.Value);
                 }
-                symbolProvider.Add(driver.Target.Name, new LogixSymbol(driver));
+                next.Add(targetName, new LogixSymbol(driver));
+
+                symbolProvider = next;
+
+                if (current.TryGetValue(targetName, out var oldSymbol))
+                    (oldSymbol as LogixSymbol)?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                await TcHmiAsyncLogger.SendAsync(Severity.Error, $"Loading symbols for target {targetName} failed: {ex.Message}", []);
+            }
+            finally
+            {
+                symbolsGate.Release();
             }
         }
 
@@ -168,15 +200,18 @@ namespace TcHmiLogixDriver
             var context = e.Context;
             var commands = e.Commands;
 
+            // one snapshot for the whole request; a concurrent symbol load publishes a new provider
+            var provider = symbolProvider;
+
             try
             {
                 if (commands.Count == 1 && commands.First().Mapping == "ListSymbols")
                 {
-                    foreach (var symbol in symbolProvider.Values)
+                    foreach (var symbol in provider.Values)
                         await (symbol as LogixSymbol)!.UpdateMappedSymbolsAsync();
                 }
 
-                foreach (var command in await symbolProvider!.HandleCommandsAsync(commands, context))
+                foreach (var command in await provider.HandleCommandsAsync(commands, context))
                 {
                     var mapping = command.Mapping;
 
@@ -209,15 +244,9 @@ namespace TcHmiLogixDriver
             }
         }
 
-        private async Task DriverCleanupAsync()
+        private void DriverCleanup(IEnumerable<IDriver> toClean)
         {
-            foreach (var recon in reconnectors.Values)
-            {
-                await recon.StopAsync();
-                recon.Dispose();
-            }
-
-            foreach (var driver in drivers.Values)
+            foreach (var driver in toClean)
             {
                 driver.ConnectionStateChanged -= DriverConnectionStateChanged;
                 driver.Dispose();
@@ -230,9 +259,14 @@ namespace TcHmiLogixDriver
             requestListener.OnRequestAsync -= OnRequestAsync;
             configListener.OnChangeAsync -= OnConfigChangeAsync;
             shutdownListener.OnShutdownAsync -= OnShutdownAsync;
-            
-            await DriverCleanupAsync();
-            
+
+            // don't tear drivers down underneath an in-progress create
+            await initialize.WaitAsync();
+
+            var toClean = drivers.Values;
+            drivers = new Dictionary<string, IDriver>();
+            DriverCleanup(toClean);
+
             initialize.Dispose();
         }
     }

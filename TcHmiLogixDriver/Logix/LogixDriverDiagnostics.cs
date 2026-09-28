@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Concurrent;
 using TcHmiSrv.Core;
 
 namespace TcHmiLogixDriver.Logix
@@ -6,7 +6,8 @@ namespace TcHmiLogixDriver.Logix
     record TargetDiagnostics(bool isConnected = false, string controllerInfo = "");
     class LogixDriverDiagnostics
     {
-        public Dictionary<string, TargetDiagnostics> Targets { get; } = new();
+        // updated from driver connection events (monitor threads) while requests enumerate it
+        public ConcurrentDictionary<string, TargetDiagnostics> Targets { get; } = new();
 
         public Value ToValue()
         {

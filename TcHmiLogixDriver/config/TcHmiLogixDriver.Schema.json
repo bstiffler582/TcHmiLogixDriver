@@ -29,7 +29,7 @@
           }
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout", "tagSelector" ]
+      "required": [ "targetAddress", "targetSlot", "timeout" ]
     }
   },
   "properties": {

@@ -166,6 +166,10 @@ namespace TcHmiLogixDriver
                 if (!configuration.Targets.TryGetValue(targetName, out var config))
                     return;
 
+                // reloading (engineering only): forget what was read before, the program may have changed
+                if (symbolProvider.ContainsKey(targetName))
+                    driver.Tags.Refresh();
+
                 await driver.LoadTagsAsync(config.tagSelector);
 
                 // copy-on-write: requests may be enumerating the current provider
@@ -176,7 +180,7 @@ namespace TcHmiLogixDriver
                     if (entry.Key != targetName)
                         next.Add(entry.Key, entry.Value);
                 }
-                next.Add(targetName, new LogixSymbol(driver));
+                next.Add(targetName, new LogixSymbol(driver, config.tagSelector));
 
                 symbolProvider = next;
 

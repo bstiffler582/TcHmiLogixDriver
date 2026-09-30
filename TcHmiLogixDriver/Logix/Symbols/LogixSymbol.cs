@@ -16,8 +16,9 @@ namespace TcHmiLogixDriver.Logix.Symbols
         private List<string> mappedSymbols = new();
         private LookupTrie<string> mappingTree = new(StringComparer.OrdinalIgnoreCase);
 
-        public LogixSymbol(IDriver driver)
-            : base(LogixSchemaAdapter.BuildSymbolSchema(driver))
+        /// <param name="tagSelector">when it has entries, the tag browser shows only the tags they select</param>
+        public LogixSymbol(IDriver driver, IEnumerable<string>? tagSelector = null)
+            : base(LogixSchemaAdapter.BuildSymbolSchema(driver, tagSelector))
         {
             this.driver = driver;
             UpdateMappedSymbolsAsync().GetAwaiter();

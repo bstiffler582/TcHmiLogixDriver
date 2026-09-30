@@ -2,7 +2,7 @@
 
 namespace TcHmiLogixDriver.Logix
 {
-    record TargetConfig(string targetAddress, string targetSlot, int timeout = 1000, string[]? tagSelector = null);
+    record TargetConfig(string targetAddress, string targetSlot, int timeout = 1000, string[]? tagSelector = null, int maxConcurrentOperations = 8);
     class LogixDriverConfig
     {
         public LogixDriverConfig(Dictionary<string, TargetConfig>? targets = null)

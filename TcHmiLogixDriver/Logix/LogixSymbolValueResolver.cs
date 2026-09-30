@@ -1,5 +1,3 @@
-using libplctag;
-using Logix;
 using Logix.Tags;
 using System;
 using TcHmiSrv.Core;
@@ -7,106 +5,109 @@ using static Logix.Tags.TagMetaHelpers;
 
 namespace TcHmiLogixDriver.Logix
 {
+    /// <summary>
+    /// Resolves tag data to TcHmi values: primitives as their .NET types, strings as string,
+    /// arrays as Value lists (nested per dimension), structures as Value maps.
+    /// </summary>
     public class LogixSymbolValueResolver : TagValueResolverBase<Value>
     {
-        public override Value ResolveValue(Tag tag, TagDefinition definition, int offset = 0)
+        public override Value ResolveValue(byte[] buffer, TypeRef type, int offset = 0, int bitOffset = 0)
         {
-            if (IsArray(definition.TypeCode))
+            if (type.IsArray)
             {
-                if (definition.Children is null || definition.Children.Count < 1)
-                    return new Value();
-
-                var members = new Value();
-                foreach (var m in definition.Children)
-                    members.Add(ResolveValue(tag, m, offset + (int)m.Offset));
-
-                return members;
+                var elements = new Value();
+                foreach (var element in Elements(type, offset, bitOffset))
+                    elements.Add(ResolveValue(buffer, element.Type, element.Offset, element.BitOffset));
+                return elements;
             }
-            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
-            {
-                if (definition.Children is null || definition.Children.Count < 1)
-                    return new Value();
 
-                var members = new Value();
-                foreach (var m in definition.Children)
-                {
-                    if (m.TypeCode == (ushort)Code.BOOL)
-                        members.Add(m.Name, ResolveValue(tag, m, ((offset + (int)m.Offset) * 8) + (int)m.BitOffset));
-                    else
-                        members.Add(m.Name, ResolveValue(tag, m, offset + (int)m.Offset));
-                }
-
-                return members;
-            }
-            else
+            switch (Resolved(type))
             {
-                var ret = PrimitiveValueResolver(tag, definition.TypeCode, offset);
-                return (Code)(definition.TypeCode) switch
-                {
-                    Code.BOOL => (bool)ret,
-                    Code.SINT => (sbyte)ret,
-                    Code.USINT => (byte)ret,
-                    Code.INT => (short)ret,
-                    Code.UINT or Code.WORD => (ushort)ret,
-                    Code.DINT => (int)ret,
-                    Code.UDINT or Code.DWORD => (uint)ret,
-                    Code.LINT => (long)ret,
-                    Code.ULINT or Code.LWORD => (ulong)ret,
-                    Code.REAL => (float)ret,
-                    Code.LREAL => (double)ret,
-                    Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
-                        => (string)ret,
-                    _ => throw new Exception($"Primitive type code:{definition.TypeCode:X} not handled")
-                };
+                case PrimitiveType primitive:
+                    return ToValue(primitive, ReadPrimitive(buffer, primitive, offset, bitOffset));
+
+                case StringType stringType:
+                    return ReadString(buffer, stringType, offset);
+
+                case StructType structType:
+                    var members = new Value();
+                    foreach (var m in structType.Members)
+                        members.Add(m.Name, ResolveValue(buffer, m.Type, offset + m.Offset, m.BitOffset));
+                    return members;
+
+                case var other:
+                    throw new NotSupportedException($"Type {other.Name} can't be read.");
             }
         }
 
-        public override void WriteTagBuffer(Tag tag, TagDefinition definition, Value value, int offset = 0)
+        public override void WriteTagBuffer(byte[] buffer, TypeRef type, Value value, int offset = 0, int bitOffset = 0)
         {
-            if (IsArray(definition.TypeCode))
+            if (type.IsArray)
             {
-                if (definition.Children is null || definition.Children.Count < 1)
-                    return;
+                if (value.Count != type.Dims[0])
+                    throw new ArgumentException($"Write value for {type} has {value.Count} elements, expected {type.Dims[0]}.");
 
-                foreach (var m in definition.Children)
-                {
-                    int.TryParse(m.Name, out var i);
-                    WriteTagBuffer(tag, m, value[i], offset + (int)m.Offset);
-                }
-
+                var i = 0;
+                foreach (var element in Elements(type, offset, bitOffset))
+                    WriteTagBuffer(buffer, element.Type, value[i++], element.Offset, element.BitOffset);
+                return;
             }
-            else if (IsUdt(definition.TypeCode) && !definition.TypeName.Contains("STRING"))
-            {
-                if (definition.Children is null || definition.Children.Count < 1)
-                    return;
 
-                foreach (var m in definition.Children)
-                {
-                    if (m.TypeCode == (ushort)Code.BOOL)
-                        WriteTagBuffer(tag, m, value[m.Name], offset + (int)m.Offset);
-                    else
-                        WriteTagBuffer(tag, m, value[m.Name], ((offset + (int)m.Offset) * 8) + (int)m.BitOffset);
-                }
-            }
-            else
+            switch (Resolved(type))
             {
-                object write = (Code)(definition.TypeCode) switch
-                {
-                    Code.BOOL => value.GetBool(),
-                    Code.SINT => value.GetSByte(),
-                    Code.USINT or Code.BYTE => value.GetByte(),
-                    Code.INT or Code.UINT or Code.WORD => value.GetInt16(),
-                    Code.DINT or Code.UDINT or Code.DWORD => value.GetInt32(),
-                    Code.LINT or Code.ULINT or Code.LWORD => value.GetInt64(),
-                    Code.REAL => value.GetSingle(),
-                    Code.LREAL => value.GetDouble(),
-                    Code.STRING or Code.STRING2 or Code.STRINGI or Code.STRINGN or Code.STRING_STRUCT
-                        => value.GetString(),
-                    _ => throw new Exception($"Primitive type code:{definition.TypeCode:X} not handled")
-                };
+                case PrimitiveType primitive:
+                    WritePrimitive(buffer, primitive, FromValue(primitive, value), offset, bitOffset);
+                    break;
 
-                PrimitiveValueWriter(tag, definition.TypeCode, write, offset);
+                case StringType stringType:
+                    WriteString(buffer, stringType, value.GetString(), offset);
+                    break;
+
+                case StructType structType:
+                    foreach (var m in structType.Members)
+                    {
+                        // every member is required; a skipped member would write back whatever was last read
+                        if (!value.ContainsKey(m.Name))
+                            throw new ArgumentException($"Write value for {structType.Name} is missing member '{m.Name}'.");
+                        WriteTagBuffer(buffer, m.Type, value[m.Name], offset + m.Offset, m.BitOffset);
+                    }
+                    break;
+
+                case var other:
+                    throw new NotSupportedException($"Type {other.Name} can't be written.");
             }
         }
+
+        private static Value ToValue(PrimitiveType type, object value) => type.Code switch
+        {
+            Code.BOOL => (bool)value,
+            Code.SINT => (sbyte)value,
+            Code.USINT => (byte)value,
+            Code.INT => (short)value,
+            Code.UINT => (ushort)value,
+            Code.DINT or Code.TIME => (int)value,
+            Code.UDINT => (uint)value,
+            Code.LINT or Code.DATE_AND_TIME => (long)value,
+            Code.ULINT => (ulong)value,
+            Code.REAL => (float)value,
+            Code.LREAL => (double)value,
+            _ => throw new NotSupportedException($"Type {type.Name} can't be read.")
+        };
+
+        private static object FromValue(PrimitiveType type, Value value) => type.Code switch
+        {
+            Code.BOOL => value.GetBool(),
+            Code.SINT => value.GetSByte(),
+            Code.USINT => value.GetByte(),
+            Code.INT => value.GetInt16(),
+            Code.UINT => value.GetUInt16(),
+            Code.DINT or Code.TIME => value.GetInt32(),
+            Code.UDINT => value.GetUInt32(),
+            Code.LINT or Code.DATE_AND_TIME => value.GetInt64(),
+            Code.ULINT => value.GetUInt64(),
+            Code.REAL => value.GetSingle(),
+            Code.LREAL => value.GetDouble(),
+            _ => throw new NotSupportedException($"Type {type.Name} can't be written.")
+        };
     }
 }

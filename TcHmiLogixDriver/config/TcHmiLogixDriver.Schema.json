@@ -27,9 +27,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "maxConcurrentOperations": {
+          "type": "integer",
+          "description": "Maximum concurrent EIP R/W operations",
+          "default": 8
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout", "tagSelector" ]
+      "required": [ "targetAddress", "targetSlot", "timeout" ]
     }
   },
   "properties": {

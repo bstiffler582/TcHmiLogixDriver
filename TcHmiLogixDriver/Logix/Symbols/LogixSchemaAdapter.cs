@@ -1,11 +1,9 @@
-﻿using Logix.Driver;
-using Logix;
-using System;
+using Logix.Driver;
+using Logix.Tags;
 using System.Collections.Generic;
 using System.Linq;
 using TcHmiSrv.Core;
 using TcHmiSrv.Core.Tools.DynamicSymbols;
-using Logix.Tags;
 
 namespace TcHmiLogixDriver.Logix.Symbols
 {
@@ -16,128 +14,114 @@ namespace TcHmiLogixDriver.Logix.Symbols
         /// of the PLC server symbol. This is the information the framework uses to
         /// render the tag browser, create mappings, resolve types, etc.
         /// </summary>
-        /// <param name="driver"></param>
-        /// <returns></returns>
-        public static JsonSchemaValue BuildSymbolSchema(IDriver driver)
+        /// <param name="tagSelector">when it has entries, only the tags they select are shown</param>
+        public static JsonSchemaValue BuildSymbolSchema(IDriver driver, IEnumerable<string>? tagSelector = null)
         {
-            var typeCache = new HashSet<string>();
-
-            var definitions = new Value();
+            var builder = new SchemaBuilder(driver.Target.Name);
             var properties = new Value();
 
-            var tagDefinitions = driver.GetTagDefinitions();
-
-            foreach (var tag in tagDefinitions)
+            var nodes = TagSelection.From(tagSelector).Apply(driver.Tags.GetLoadedTags()).ToList();
+            foreach (var node in nodes)
             {
-                if (tag.Name.StartsWith("__DEFVAL_"))
-                    continue;
-
-                var instance = ResolveTypeDefinitionSchema(tag, definitions, typeCache, driver.Target.Name);
-                properties.Add(tag.Name, instance);
+                switch (node)
+                {
+                    case TagInfo tag when !tag.Name.StartsWith("__DEFVAL_"):
+                        properties.Add(tag.Name, builder.TypeSchema(tag.Type).Schema);
+                        break;
+                    case ProgramInfo program:
+                        properties.Add(program.Name, builder.ProgramSchema(program));
+                        break;
+                }
             }
 
             var root = new Value();
-            root.Add("definitions", definitions);
+            root.Add("definitions", builder.Definitions);
             root.Add("properties", properties);
             root.Add("type", "object");
             root.Add("allowMapping", false);
 
-            var extractDefinitions = (tagDefinitions.Count() > 0);
-
-            return new JsonSchemaValue(root, extractDefinitions);
+            return new JsonSchemaValue(root, nodes.Count > 0);
         }
 
-        // Builds type definition and instance schemas for tag browser, and TcHmi framework value resolutions
-        // mutates definitions and cache reference parameters
-        private static Value ResolveTypeDefinitionSchema(TagDefinition tag, Value definitions, HashSet<string> cache, string targetName)
+        /// <summary>
+        /// Builds instance schemas, adding each named type (structures, arrays, programs) to the
+        /// definitions once and referring to it from there.
+        /// </summary>
+        private sealed class SchemaBuilder
         {
-            // recurse through nested/complex types (arrays and UDTs)
-            (string typeName, Value schema) InnerResolver(TagDefinition node)
+            private readonly string targetName;
+            private readonly HashSet<string> defined = new();
+
+            public Value Definitions { get; } = new();
+
+            public SchemaBuilder(string targetName) => this.targetName = targetName;
+
+            public (string TypeName, Value Schema) TypeSchema(TypeRef type)
             {
-                if (node.ExpansionLevel != ExpansionLevel.Deep)
+                // not loaded yet: shown, but can't be browsed into or mapped
+                if (!type.IsResolved)
+                    return (type.ToString(), Hidden());
+
+                if (type.IsArray)
                 {
-                    var unresolved = new Value();
-                    unresolved.Add("type", "object");
-                    unresolved.Add("allowMapping", false);
-                    unresolved.Add("hidden", true);
-                    return (node.Name, unresolved);
-                }
+                    var (itemTypeName, itemSchema) = TypeSchema(type.Index(1));
+                    var count = type.Dims[0];
+                    var typeName = $"ARRAY_0..{count - 1}_OF-{itemTypeName}";
 
-                if (TagMetaHelpers.IsArray(node.TypeCode))
-                {
-                    if (node.Children is null || node.Children.Count == 0)
-                        throw new Exception($"Array type {node.Name} has no members to infer item type.");
-
-                    var member = node.Children.First();
-
-                    // build inner item schema and type name
-                    var (innerTypeName, innerSchema) = InnerResolver(member);
-
-                    var dims = node.Dimensions ?? Array.Empty<uint>();
-                    var currentDim = dims.Length > 0 ? (int)dims[0] : 1;
-                    var arrTypeName = $"ARRAY_0..{currentDim - 1}_OF-{innerTypeName}";
-
-                    // full definition name
-                    var fullDefName = $"{targetName}.{arrTypeName}";
-
-                    if (!cache.Contains(fullDefName))
+                    return (typeName, Define(typeName, () => new Value
                     {
-                        var arrayDef = new Value();
-
-                        arrayDef.Add("type", "array");
-                        arrayDef.Add("items", innerSchema);
-                        arrayDef.Add("maxItems", currentDim);
-                        arrayDef.Add("minItems", currentDim);
-
-                        definitions.Add(fullDefName, arrayDef);
-                        cache.Add(fullDefName);
-                    }
-
-                    return (arrTypeName, new Value { { "$ref", $"#/definitions/{fullDefName}" } });
+                        { "type", "array" },
+                        { "items", itemSchema },
+                        { "maxItems", count },
+                        { "minItems", count },
+                    }));
                 }
-                else if (TagMetaHelpers.IsUdt(node.TypeCode) || node.Name.StartsWith("Program:"))
+
+                return type.ElementType switch
                 {
-                    if (node.TypeName == "STRING")
-                        return ("String", new Value { { "$ref", "tchmi:general#/definitions/String" } });
-
-                    var defName = $"{targetName}.{node.TypeName}";
-
-                    if (!cache.Contains(defName))
+                    StringType => ("String", Reference("tchmi:general#/definitions/String")),
+                    StructType structType => (structType.Name, Define(structType.Name, () =>
                     {
-                        var udtDef = new Value();
-                        udtDef.Add("type", "object");
-
-                        if (node.Name.StartsWith("Program:"))
-                            udtDef.Add("allowMapping", false);
-
-                        var udtMembers = new Value();
-
-                        if (node.Children != null)
-                        {
-                            foreach (var member in node.Children)
-                            {
-                                var (_, memberSchema) = InnerResolver(member);
-                                udtMembers.Add(member.Name, memberSchema);
-                            }
-                        }
-
-                        udtDef.Add("properties", udtMembers);
-                        definitions.Add(defName, udtDef);
-                        cache.Add(defName);
-                    }
-
-                    return (node.TypeName, new Value { { "$ref", $"#/definitions/{defName}" } });
-                }
-                else
-                {
-                    // primitive type
-                    var primName = node.TypeName;
-                    return (primName, new Value { { "$ref", $"tchmi:general#/definitions/{primName}" } });
-                }
+                        var members = new Value();
+                        foreach (var member in structType.Members)
+                            members.Add(member.Name, TypeSchema(member.Type).Schema);
+                        return new Value { { "type", "object" }, { "properties", members } };
+                    })),
+                    var primitive => (primitive!.Name, Reference($"tchmi:general#/definitions/{primitive.Name}")),
+                };
             }
 
-            var result = InnerResolver(tag);
-            return result.schema;
+            public Value ProgramSchema(ProgramInfo program)
+            {
+                if (!program.IsLoaded)
+                    return Hidden();
+
+                return Define(program.Name, () =>
+                {
+                    var tags = new Value();
+                    foreach (var tag in program.Tags!)
+                        tags.Add(tag.Name, TypeSchema(tag.Type).Schema);
+                    return new Value { { "type", "object" }, { "allowMapping", false }, { "properties", tags } };
+                });
+            }
+
+            // adds the definition the first time a type name is seen; returns a reference to it
+            private Value Define(string typeName, System.Func<Value> build)
+            {
+                var definitionName = $"{targetName}.{typeName}";
+                if (defined.Add(definitionName))
+                    Definitions.Add(definitionName, build());
+                return Reference($"#/definitions/{definitionName}");
+            }
+
+            private static Value Reference(string target) => new() { { "$ref", target } };
+
+            private static Value Hidden() => new()
+            {
+                { "type", "object" },
+                { "allowMapping", false },
+                { "hidden", true },
+            };
         }
     }
 }

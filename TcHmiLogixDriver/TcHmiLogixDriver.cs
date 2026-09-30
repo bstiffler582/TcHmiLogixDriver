@@ -100,13 +100,17 @@ namespace TcHmiLogixDriver
 
                 foreach (var (targetName, config) in configuration.Targets)
                 {
-                    var driver = Driver.Create(
-                        new Target(
+                    var target = new Target(
                             name: targetName,
                             gateway: config.targetAddress,
                             path: config.targetSlot,
                             timeoutMs: config.timeout,
-                            heartbeatInterval: TimeSpan.FromSeconds(5)),
+                            heartbeatInterval: TimeSpan.FromSeconds(5));
+
+                    target.MaxConcurrentOperations = config.maxConcurrentOperations;
+
+                    var driver = Driver.Create(
+                        target,
                         new LogixSymbolValueResolver());
 
                     newDrivers.Add(targetName, driver);

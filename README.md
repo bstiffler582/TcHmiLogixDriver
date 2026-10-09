@@ -47,7 +47,7 @@ To serve a binding, the driver walks down a mapping tree along the binding's pat
 | `Line.Motors[0].Current` | `Line.Motors` | `Line.Motors` (whole array) |
 | `Line.Motors[2].Speed` | `Line.Motors[2].Speed` | `Line.Motors[2].Speed` (single primitive) |
 
-Notice that the binding to `Line::Motors::0::Current` causes the whole `Line` structure to be read!
+Notice that the binding to `Line.Speed` causes the whole `Line` structure to be read.
 
 >- **Map a parent structure or array** when the HMI shows many of its members. Every binding under it (`Line.Speed`, `Line.Running`, …) is served by a single PLC request.
 >- **Map individual members** when you only need a few fields from a large structure or array, so the driver doesn't transfer the whole thing for each request.

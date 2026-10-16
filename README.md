@@ -9,6 +9,8 @@ Within the TwinCAT HMI framework, this driver supports:
 - Tag browsing
 - Automatic type and value resolution
 
+For how it works under the hood (symbols, mapping, reads and writes, connections and errors), see the [documentation](Documentation/README.md).
+
 ### Installation
 Download the latest `.nupkg` [release](https://github.com/bstiffler582/TcHmiLogixDriver/releases), then place it in a nuget offline packages folder (e.g. `C:\ProgramData\Beckhoff\NuGetPackages`). It will now be availabe to install in your TwinCAT HMI project via the nuget package manager GUI (`References -> Packages`) or CLI (`nuget install TcHmiLogixDriver`).
 
@@ -25,7 +27,7 @@ Line                 LINE_UDT
 ├── Speed            REAL
 ├── Running          BOOL
 └── Motors           MOTOR_UDT[4]
-    └── [0..9]
+    └── [0..3]
         ├── Speed    REAL
         ├── Current  REAL
         └── Faults   DINT
@@ -47,11 +49,13 @@ To serve a binding, the driver walks down a mapping tree along the binding's pat
 | `Line.Motors[0].Current` | `Line.Motors` | `Line.Motors` (whole array) |
 | `Line.Motors[2].Speed` | `Line.Motors[2].Speed` | `Line.Motors[2].Speed` (single primitive) |
 
-Notice that the binding to `Line::Motors::0::Current` causes the whole `Line` structure to be read!
+Notice that the binding to `Line.Speed` causes the whole `Line` structure to be read!
 
 >- **Map a parent structure or array** when the HMI shows many of its members. Every binding under it (`Line.Speed`, `Line.Running`, …) is served by a single PLC request.
 >- **Map individual members** when you only need a few fields from a large structure or array, so the driver doesn't transfer the whole thing for each request.
 >- When mappings overlap, **the most specific path wins**. `Line` is mapped, but `Line.Motors[2].Speed` has its own mapping, so bindings for that tag read just that member and not all of `Line`.
+
+> **Renaming mapped symbols is not supported in this version.** Keep the default name the tag browser assigns (`TcHmiLogixDriver.<target>.<path>`). The driver builds its mapping tree from those names, so a renamed symbol is left out. Bindings to it then read a larger mapped parent, or fail.
 
 ### Writes
 

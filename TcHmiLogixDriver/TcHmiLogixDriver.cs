@@ -35,6 +35,8 @@ namespace TcHmiLogixDriver
         private readonly SemaphoreSlim initialize = new(1, 1);
         // Serializes symbol loads and every publish of symbolProvider/drivers.
         private readonly SemaphoreSlim symbolsGate = new(1, 1);
+        // 1 while a ListSymbols-triggered mapping refresh is running
+        private int refreshingMappings;
 
         private static bool IsEngineering => TcHmiApplication.Path.Contains(".engineering_servers");
 
@@ -184,7 +186,8 @@ namespace TcHmiLogixDriver
                     if (entry.Key != targetName)
                         next.Add(entry.Key, entry.Value);
                 }
-                next.Add(targetName, new LogixSymbol(driver, config.tagSelector));
+                // built (mapping tree included) before it's published, so requests never see an empty tree
+                next.Add(targetName, await LogixSymbol.CreateAsync(driver, config.tagSelector));
 
                 symbolProvider = next;
 
@@ -213,11 +216,10 @@ namespace TcHmiLogixDriver
 
             try
             {
-                if (commands.Count == 1 && commands.First().Mapping == "ListSymbols")
-                {
-                    foreach (var symbol in provider.Values)
-                        await (symbol as LogixSymbol)!.UpdateMappedSymbolsAsync();
-                }
+                // Mappings only change without a symbol reload in engineering. Not awaited, so the
+                // server's ListSymbols isn't held up; later reads use the refreshed tree.
+                if (IsEngineering && commands.Count == 1 && commands.First().Mapping == "ListSymbols")
+                    _ = RefreshMappingsAsync(provider.Values.OfType<LogixSymbol>().ToList());
 
                 foreach (var command in await provider.HandleCommandsAsync(commands, context))
                 {
@@ -249,6 +251,28 @@ namespace TcHmiLogixDriver
             catch (Exception ex)
             {
                 throw new TcHmiException(ex.Message, ret == ErrorValue.HMI_SUCCESS ? ErrorValue.HMI_E_EXTENSION : ret);
+            }
+        }
+
+        // Refreshes each symbol's mapping tree. Fire-and-forget from ListSymbols requests, so it
+        // logs rather than throws. Skipped while a previous pass is still running.
+        private async Task RefreshMappingsAsync(IReadOnlyList<LogixSymbol> symbols)
+        {
+            if (Interlocked.Exchange(ref refreshingMappings, 1) == 1)
+                return;
+
+            try
+            {
+                foreach (var symbol in symbols)
+                    await symbol.UpdateMappedSymbolsAsync();
+            }
+            catch (Exception ex)
+            {
+                await TcHmiAsyncLogger.SendAsync(Severity.Error, $"Refreshing symbol mappings failed: {ex.Message}", []);
+            }
+            finally
+            {
+                Volatile.Write(ref refreshingMappings, 0);
             }
         }
 

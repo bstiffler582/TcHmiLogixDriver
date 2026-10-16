@@ -2,6 +2,7 @@ using Logix.Driver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using TcHmiLogixDriver.Utilities;
 using TcHmiSrv.Core;
@@ -12,16 +13,31 @@ namespace TcHmiLogixDriver.Logix.Symbols
 {
     public class LogixSymbol : AsyncSymbol, IDisposable
     {
-        private readonly IDriver driver;
-        private List<string> mappedSymbols = new();
-        private LookupTrie<string> mappingTree = new(StringComparer.OrdinalIgnoreCase);
+        // a missed lookup refreshes the mapping tree at most this often
+        private const long MappingRefreshInterval = 5000;
 
-        /// <param name="tagSelector">when it has entries, the tag browser shows only the tags they select</param>
-        public LogixSymbol(IDriver driver, IEnumerable<string>? tagSelector = null)
+        // mapped symbol paths and the tree built from them, published together by reference swap
+        private sealed record Mappings(IReadOnlyList<string> Symbols, LookupTrie<string> Tree);
+
+        private readonly IDriver driver;
+        private volatile Mappings mappings = new(Array.Empty<string>(), new LookupTrie<string>(StringComparer.OrdinalIgnoreCase));
+        private long nextMappingRefreshAt;
+
+        private LogixSymbol(IDriver driver, IEnumerable<string>? tagSelector)
             : base(LogixSchemaAdapter.BuildSymbolSchema(driver, tagSelector))
         {
             this.driver = driver;
-            UpdateMappedSymbolsAsync().GetAwaiter();
+        }
+
+        /// <summary>
+        /// Creates the symbol with its mapping tree already built, so it never serves requests from an empty tree.
+        /// </summary>
+        /// <param name="tagSelector">when it has entries, the tag browser shows only the tags they select</param>
+        public static async Task<LogixSymbol> CreateAsync(IDriver driver, IEnumerable<string>? tagSelector = null)
+        {
+            var symbol = new LogixSymbol(driver, tagSelector);
+            await symbol.UpdateMappedSymbolsAsync();
+            return symbol;
         }
 
         /// <summary>
@@ -38,7 +54,14 @@ namespace TcHmiLogixDriver.Logix.Symbols
                 throw new Exception($"Driver {driver.Target.Name} disconnected.");
 
             // get mapped element list with matching / partial matching path
-            var node = mappingTree.TryDescend(elements);
+            var node = mappings.Tree.TryDescend(elements);
+
+            // requested symbol not in mapping tree, try to refresh mappings
+            if (node is null && CheckMappingRefreshInterval())
+            {
+                await UpdateMappedSymbolsAsync();
+                node = mappings.Tree.TryDescend(elements);
+            }
 
             if (node is null)
                 throw new Exception($"Requested symbol path: {string.Join(".", elements)} not found in map tree.");
@@ -92,13 +115,21 @@ namespace TcHmiLogixDriver.Logix.Symbols
         public async Task UpdateMappedSymbolsAsync()
         {
             var symbols = await GetMappedSymbolsAsync();
-            if (mappedSymbols.SequenceEqual(symbols))
+
+            // keep the current tree when the server couldn't be asked; an empty list would unmap everything
+            if (symbols is null || mappings.Symbols.SequenceEqual(symbols))
                 return;
-            else
-            {
-                mappedSymbols = symbols.ToList();
-                mappingTree = BuildMappingTree(mappedSymbols);
-            }
+
+            mappings = new Mappings(symbols, BuildMappingTree(symbols));
+        }
+
+        // lets one caller per interval refresh after a miss, so a stale binding won't refresh every poll
+        private bool CheckMappingRefreshInterval()
+        {
+            var now = Environment.TickCount64;
+            var due = Interlocked.Read(ref nextMappingRefreshAt);
+            return now >= due &&
+                Interlocked.CompareExchange(ref nextMappingRefreshAt, now + MappingRefreshInterval, due) == due;
         }
 
         // A tree structure (trie) gives us an efficient way to compare the requested symbol path
@@ -108,29 +139,28 @@ namespace TcHmiLogixDriver.Logix.Symbols
             var tree = new LookupTrie<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var symbol in symbols)
-            {
-                // skip extension and target name
-                var path = symbol.Split('.').Skip(2);
-                tree.AddPath(path);
-            }
+                tree.AddPath(symbol.Split('.'));
 
             return tree;
         }
 
-        // request mapped symbol list from TcHmiSrv
-        private async Task<IEnumerable<string>> GetMappedSymbolsAsync()
+        // request mapped symbol list from TcHmiSrv; returns each of this target's symbols as its
+        // path below the target, e.g. "TcHmiLogixDriver.PLC1.Line.Motors" -> "Line.Motors"; null if the request failed
+        private async Task<List<string>?> GetMappedSymbolsAsync()
         {
-            var (res, ctx, cmd) = 
+            var (res, ctx, cmd) =
                 await TcHmiApplication.AsyncHost.ExecuteAsync(TcHmiApplication.Context, new Command("ListSymbols"));
 
             if (res != ErrorValue.HMI_SUCCESS)
-                return Enumerable.Empty<string>();
+                return null;
 
-            // filter for TcHmiLogixDriver symbols
-            var domainSymbolNames = cmd.ReadValue.Keys
-                .Where(s => s.StartsWith(ctx.Domain));
+            // match "<domain>.<target>." prefix
+            var prefix = $"{ctx.Domain}.{driver.Target.Name}.";
 
-            return domainSymbolNames.Where(s => s.Contains(driver.Target.Name));
+            return cmd.ReadValue.Keys
+                .Where(s => s.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(s => s[prefix.Length..])
+                .ToList();
         }
     }
 }

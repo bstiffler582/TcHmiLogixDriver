@@ -70,28 +70,28 @@ namespace TcHmiLogixDriver.Utilities
 
         /// <summary>
         /// Descend the tree along the supplied sequence of elements.
-        /// Return exact match or longest prefix path.
+        /// Return the longest added path that the sequence starts with.
         /// </summary>
         /// <param name="elements">Ordered sequence of elements</param>
-        /// <returns>The deepest node reachable following the given sequence</returns>
+        /// <returns>The deepest terminal node on the way down, or null if no added path matches</returns>
         public Node? TryDescend(IEnumerable<TKey> elements)
         {
-            using var e = elements.GetEnumerator();
-            if (!e.MoveNext())
-                return null;
+            Node? match = null;
+            var node = _root;
 
-            if (!_root.Children.TryGetValue(e.Current, out var node))
-                return null;
-
-            while (e.MoveNext())
+            foreach (var key in elements)
             {
-                if (!node.Children.TryGetValue(e.Current, out var next))
+                if (!node.Children.TryGetValue(key, out var next))
                     break;
 
                 node = next;
+
+                // intermediate nodes only exist because a deeper path was added; skip past them
+                if (node.IsTerminal)
+                    match = node;
             }
 
-            return node;
+            return match;
         }
     }
 }

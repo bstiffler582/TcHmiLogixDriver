@@ -34,7 +34,7 @@
           "default": 8
         }
       },
-      "required": [ "targetAddress", "targetSlot", "timeout" ]
+      "required": [ "targetAddress", "targetSlot", "timeout", "maxConcurrentOperations" ]
     }
   },
   "properties": {
